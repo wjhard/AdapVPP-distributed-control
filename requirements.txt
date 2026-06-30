@@ -1,0 +1,10 @@
+cdsapi
+xarray
+netCDF4
+numpy
+pandas
+scipy
+matplotlib
+requests
+pvlib
+openpyxl

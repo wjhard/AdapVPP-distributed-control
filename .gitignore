@@ -1,0 +1,16 @@
+.venv/
+.idea/
+logs/
+__pycache__/
+*.py[cod]
+
+# Keep final datasets, but skip ERA5 monthly intermediate chunks.
+data/raw/era5/_chunks/
+data/raw/load/ercot_native_load_2023.zip
+
+# Local secrets and machine-specific files.
+.cdsapirc
+.env
+*.tmp
+Thumbs.db
+.DS_Store
