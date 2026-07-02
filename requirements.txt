@@ -8,3 +8,4 @@ matplotlib
 requests
 pvlib
 openpyxl
+websockets

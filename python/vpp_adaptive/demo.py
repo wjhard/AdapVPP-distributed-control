@@ -1,0 +1,103 @@
+from __future__ import annotations
+
+import asyncio
+from pathlib import Path
+from typing import Dict, List
+
+from .clustering import ConnectivityClusterer
+from .dispatch import AdaptiveDispatcher
+from .link_quality import LinkQualitySimulator
+from .matlab_backend import MatlabDispatchBackend
+from .models import DispatchResult, MODE_LABELS, OperatingMode, QualitySnapshot, StateDecision
+from .resource_profile import ResourceProfile
+from .runtime_logging import RunLogger
+from .state_machine import AdaptiveStateMachine
+from .websocket_server import TelemetryWebSocketServer
+
+
+class AdaptiveVppDemo:
+    def __init__(
+        self,
+        project_root: Path,
+        duration_s: float = 120.0,
+        interval_s: float = 1.0,
+        websocket_host: str = "127.0.0.1",
+        websocket_port: int = 8765,
+        realtime: bool = True,
+    ) -> None:
+        self.project_root = project_root
+        self.duration_s = duration_s
+        self.interval_s = interval_s
+        self.realtime = realtime
+
+        self.link_quality = LinkQualitySimulator(cycle_s=duration_s)
+        self.state_machine = AdaptiveStateMachine(min_dwell_s=3.0)
+        self.clusterer = ConnectivityClusterer()
+        self.resources = ResourceProfile(project_root)
+        self.backend = MatlabDispatchBackend(project_root)
+        self.dispatcher = AdaptiveDispatcher(self.backend)
+        self.websocket = TelemetryWebSocketServer(websocket_host, websocket_port)
+        self.run_logger = RunLogger(project_root)
+        self.visited_modes: List[OperatingMode] = [OperatingMode.GLOBAL]
+
+    async def run(self) -> None:
+        await self.websocket.start()
+        if self.websocket.enabled:
+            self.run_logger.info(f"WEBSOCKET_STATUS enabled ws://{self.websocket.host}:{self.websocket.port}")
+        else:
+            self.run_logger.info(f"WEBSOCKET_STATUS disabled reason={self.websocket.error}")
+        self.run_logger.backend_status(self.backend.label)
+
+        total_steps = int(self.duration_s / self.interval_s) + 1
+        for step in range(total_steps):
+            elapsed_s = min(step * self.interval_s, self.duration_s)
+            quality = self.link_quality.sample(elapsed_s)
+            decision = self.state_machine.update(elapsed_s, quality.average_delay_ms, quality.max_loss_rate)
+            if decision.changed:
+                self.visited_modes.append(decision.mode)
+
+            clusters = self._clusters_for_mode(decision.mode, quality)
+            resource = self.resources.sample(elapsed_s, self.duration_s)
+            dispatch = self.dispatcher.dispatch(decision.mode, quality, clusters, resource, self.interval_s)
+
+            if decision.changed:
+                self.run_logger.transition(decision, quality, dispatch)
+            self.run_logger.snapshot(quality, decision, dispatch)
+            await self.websocket.broadcast(self._payload(quality, decision, dispatch))
+
+            if self.realtime and step < total_steps - 1:
+                await asyncio.sleep(self.interval_s)
+
+        await self.websocket.stop()
+        self.run_logger.info(
+            "DEMO_COMPLETE visited_modes="
+            + "->".join(mode.name for mode in self.visited_modes)
+        )
+        self.run_logger.print_key_fragments()
+        print("\nVisited modes:", " -> ".join(MODE_LABELS[mode] for mode in self.visited_modes))
+
+    def _clusters_for_mode(self, mode: OperatingMode, quality: QualitySnapshot) -> List[List[int]]:
+        if mode == OperatingMode.GLOBAL:
+            return [[1, 2, 3, 4, 5]]
+        if mode == OperatingMode.AUTONOMOUS:
+            return [[1], [2], [3], [4], [5]]
+        return self.clusterer.connected_components(quality)
+
+    @staticmethod
+    def _payload(quality: QualitySnapshot, decision: StateDecision, dispatch: DispatchResult) -> Dict[str, object]:
+        return {
+            "elapsed_s": round(quality.elapsed_s, 3),
+            "mode": decision.mode.value,
+            "mode_label": MODE_LABELS[decision.mode],
+            "average_delay_ms": round(quality.average_delay_ms, 3),
+            "max_loss_rate": round(quality.max_loss_rate, 5),
+            "links": quality.compact_links(),
+            "clusters": dispatch.clusters,
+            "dispatch": {
+                "target_mw": [round(x, 3) for x in dispatch.target_mw],
+                "command_mw": [round(x, 3) for x in dispatch.command_mw],
+                "max_delta_mw": round(dispatch.max_delta_mw, 5),
+                "backend": dispatch.backend,
+                "note": dispatch.note,
+            },
+        }
