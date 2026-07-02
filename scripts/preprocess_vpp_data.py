@@ -18,6 +18,10 @@ LOAD_DIR = PROJECT_ROOT / "data" / "raw" / "load"
 SOLAR_OUT_DIR = PROJECT_ROOT / "data" / "processed" / "solar"
 WIND_OUT_DIR = PROJECT_ROOT / "data" / "processed" / "wind"
 MATLAB_OUT_DIR = PROJECT_ROOT / "data" / "processed" / "matlab"
+WIND_SHEAR_EXPONENT = 0.143
+# ERA5's 0.25-degree grid smooths Weining ridge winds; this site factor aligns
+# the two wind nodes with the Longtoushan reference of about 1950 h/year.
+WEINING_WIND_SPEED_CALIBRATION = 2.0348602384384966
 
 
 @dataclass(frozen=True)
@@ -30,12 +34,12 @@ class Node:
 
 
 SOLAR_NODES = [
-    Node(1, "solar", 50.0, 26.6, 106.7),
-    Node(2, "solar", 40.0, 27.3, 105.9),
+    Node(1, "solar", 50.0, 26.85, 104.30),
+    Node(2, "solar", 40.0, 26.70, 103.95),
 ]
 WIND_NODES = [
-    Node(3, "wind", 60.0, 28.1, 107.2),
-    Node(4, "wind", 55.0, 25.8, 104.8),
+    Node(3, "wind", 60.0, 26.85, 104.27),  # Weining Longtoushan area
+    Node(4, "wind", 55.0, 26.95, 104.10),  # Weining Mazhan town area
 ]
 ALL_NODES = [
     *SOLAR_NODES,
@@ -147,7 +151,8 @@ def preprocess_wind(wind_ds: Era5Dataset) -> pd.DataFrame:
         u = normalized_length(wind_ds.point_series(("u10", "10m_u_component_of_wind"), node.latitude, node.longitude))
         v = normalized_length(wind_ds.point_series(("v10", "10m_v_component_of_wind"), node.latitude, node.longitude))
         speed10 = np.sqrt(u**2 + v**2)
-        speed100 = speed10 * (100.0 / 10.0) ** 0.143
+        speed100 = speed10 * (100.0 / 10.0) ** WIND_SHEAR_EXPONENT
+        speed100 *= WEINING_WIND_SPEED_CALIBRATION
         out[f"node_{node.node_id}_wind_mw"] = wind_power_curve(speed100, node.capacity_mw)
         out[f"node_{node.node_id}_wind_speed_100m_mps"] = speed100
     df = pd.DataFrame(out)
@@ -269,6 +274,25 @@ def save_mat(path: Path, P_solar: np.ndarray, P_wind: np.ndarray, P_load: np.nda
     sio.savemat(path, build_mat_dict(P_solar, P_wind, P_load), do_compression=True)
 
 
+def log_capacity_factors(P_solar: np.ndarray, P_wind: np.ndarray) -> None:
+    log("[STATS] Capacity factors:")
+    for idx, node in enumerate(SOLAR_NODES):
+        cf = float(np.mean(P_solar[:, idx]) / node.capacity_mw)
+        log(
+            f"      node_{node.node_id}_solar: mean={np.mean(P_solar[:, idx]):.3f} MW, "
+            f"max={np.max(P_solar[:, idx]):.3f} MW, CF={cf:.2%}, equiv_hours={cf * len(P_solar):.0f} h"
+        )
+    for idx, node in enumerate(WIND_NODES):
+        cf = float(np.mean(P_wind[:, idx]) / node.capacity_mw)
+        log(
+            f"      node_{node.node_id}_wind: mean={np.mean(P_wind[:, idx]):.3f} MW, "
+            f"max={np.max(P_wind[:, idx]):.3f} MW, CF={cf:.2%}, equiv_hours={cf * len(P_wind):.0f} h"
+        )
+    wind_capacity = sum(node.capacity_mw for node in WIND_NODES)
+    wind_cf = float(np.sum(P_wind) / (wind_capacity * len(P_wind)))
+    log(f"      wind_combined: CF={wind_cf:.2%}, equiv_hours={wind_cf * len(P_wind):.0f} h")
+
+
 def summarize_mat(path: Path) -> None:
     data = sio.loadmat(path, squeeze_me=False)
     dims = {
@@ -313,6 +337,8 @@ def main() -> None:
         raise ValueError(
             f"unexpected shapes: solar={P_solar.shape}, wind={P_wind.shape}, load={P_load.shape}"
         )
+
+    log_capacity_factors(P_solar, P_wind)
 
     full_mat = MATLAB_OUT_DIR / "vpp_dataset.mat"
     week_mat = MATLAB_OUT_DIR / "vpp_typical_week.mat"
