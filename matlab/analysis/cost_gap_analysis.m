@@ -38,6 +38,7 @@ if ~exist(results_dir, 'dir')
     mkdir(results_dir);
 end
 save(fullfile(results_dir, 'cost_gap_analysis.mat'), 'cost_gap_table');
+writetable(cost_gap_table, 'matlab/results/cost_gap_analysis.csv');
 
 end
 

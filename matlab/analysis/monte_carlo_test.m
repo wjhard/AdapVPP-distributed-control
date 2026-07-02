@@ -112,5 +112,6 @@ if ~exist(results_dir, 'dir')
     mkdir(results_dir);
 end
 save(fullfile(results_dir, 'monte_carlo_summary.mat'), 'mc_summary_table');
+writetable(mc_summary_table, 'matlab/results/monte_carlo_summary.csv');
 
 end

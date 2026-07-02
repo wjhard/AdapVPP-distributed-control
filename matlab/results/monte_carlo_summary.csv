@@ -1,0 +1,5 @@
+Condition,Method,IterationMean,IterationStd,CommSavingMean,CommSavingStd,DivergedCases,ConvergenceSuccessRate
+Light weak communication,Standard ADMM weak,200,0,0,0,30,0
+Light weak communication,ET-ADMM robust,325,0,94.0307692307692,0,0,100
+Heavy weak communication,Standard ADMM weak,200,0,0,0,30,0
+Heavy weak communication,ET-ADMM robust,391,0,93.8107416879795,4.33613787193628e-14,0,100
