@@ -36,7 +36,7 @@ class MatlabDispatchBackend:
                 p_opt, *_ = self._engine.et_admm_robust(
                     float(demand_mw),
                     self._cfg,
-                    int(delay_steps),
+                    float(delay_steps),
                     float(loss_rate),
                     float("inf"),
                     float("inf"),
