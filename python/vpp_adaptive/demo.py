@@ -73,8 +73,14 @@ class AdaptiveVppDemo:
             "DEMO_COMPLETE visited_modes="
             + "->".join(mode.name for mode in self.visited_modes)
         )
+        link_diagnostics = self.link_quality.diagnostic_lines()
+        for line in link_diagnostics:
+            self.run_logger.info(line)
         self.run_logger.print_key_fragments()
         print("\nVisited modes:", " -> ".join(MODE_LABELS[mode] for mode in self.visited_modes))
+        print("\n=== Gilbert-Elliott link diagnostics ===")
+        for line in link_diagnostics:
+            print(line)
 
     def _clusters_for_mode(self, mode: OperatingMode, quality: QualitySnapshot) -> List[List[int]]:
         if mode == OperatingMode.GLOBAL:
