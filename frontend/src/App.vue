@@ -8,9 +8,9 @@ import PowerTrendChart from './components/PowerTrendChart.vue'
 import TimelinePanel from './components/TimelinePanel.vue'
 import TopStatusBar from './components/TopStatusBar.vue'
 import TopologyMap from './components/TopologyMap.vue'
-import { NODES } from './constants'
 import { useTelemetry } from './composables/useTelemetry'
 import { useVerificationData } from './composables/useVerificationData'
+import { NODES } from './constants'
 
 const BASE_WIDTH = 1920
 const BASE_HEIGHT = 1080
@@ -35,9 +35,7 @@ const robustCommSaving = computed(() => {
   if (rows.length === 0) {
     return 94.0
   }
-  return (
-    rows.reduce((sum, row) => sum + Number(row.CommSavingMean || 0), 0) / rows.length
-  )
+  return rows.reduce((sum, row) => sum + Number(row.CommSavingMean || 0), 0) / rows.length
 })
 
 const activeLinks = computed(
@@ -74,13 +72,12 @@ onUnmounted(() => {
 
         <DashboardPanel class="panel-power" title="实时功率分配" accent="#ffd166">
           <template #meta>
-            <span class="panel-meta">
-              负荷 {{ telemetry.estimatedLoad.value.toFixed(1) }} MW
-            </span>
+            <span class="panel-meta">负荷 {{ telemetry.estimatedLoad.value.toFixed(1) }} MW</span>
           </template>
           <PowerTrendChart
             :estimated-load="telemetry.estimatedLoad.value"
             :history="telemetry.history.value"
+            :mode="telemetry.current.value.mode"
           />
         </DashboardPanel>
 
@@ -102,6 +99,9 @@ onUnmounted(() => {
         </DashboardPanel>
 
         <DashboardPanel class="panel-timeline" title="状态切换时间轴" accent="#f5c84c">
+          <template #meta>
+            <span class="evidence-tag evidence-tag--live">实时事件日志</span>
+          </template>
           <TimelinePanel
             :live-transitions="telemetry.transitions.value"
             :static-transitions="verification.data.value.transitions"
@@ -109,6 +109,9 @@ onUnmounted(() => {
         </DashboardPanel>
 
         <DashboardPanel class="panel-efficiency" title="通信效率指标" accent="#a4ff7a">
+          <template #meta>
+            <span class="evidence-tag evidence-tag--mixed">历史统计 / 实时</span>
+          </template>
           <EfficiencyGauge
             :live-delta="telemetry.current.value.max_delta_mw"
             :saving-rate="robustCommSaving"
@@ -117,8 +120,9 @@ onUnmounted(() => {
 
         <DashboardPanel class="panel-algo" title="算法效果对比看板" accent="#ff8e8e">
           <template #meta>
-            <span class="panel-meta">
-              MATLAB 验证数据 {{ verification.ready.value ? '已加载' : '加载中' }}
+            <span class="panel-meta panel-meta--group">
+              <span class="evidence-tag evidence-tag--offline">离线验证证据</span>
+              <span>MATLAB 验证数据 {{ verification.ready.value ? '已加载' : '加载中' }}</span>
             </span>
           </template>
           <AlgorithmBoard

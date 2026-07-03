@@ -288,6 +288,44 @@ textarea {
   font-size: 13px;
 }
 
+.panel-meta--group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.evidence-tag {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  font-family: Consolas, "Roboto Mono", monospace;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+  background: rgba(7, 30, 37, 0.78);
+}
+
+.panel-meta--group .evidence-tag {
+  margin-left: 0;
+}
+
+.evidence-tag--live {
+  color: #29e6bb;
+}
+
+.evidence-tag--offline {
+  color: #ff8e8e;
+}
+
+.evidence-tag--mixed {
+  color: #a4ff7a;
+}
+
 .panel__body {
   position: relative;
   flex: 1;
