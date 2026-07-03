@@ -1,0 +1,269 @@
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { LINK_KEYS, MODE_LABELS } from '../constants'
+import type {
+  ConnectionStatus,
+  LinkMap,
+  OperatingMode,
+  TelemetryPayload,
+  TelemetrySnapshot,
+  TransitionRecord,
+} from '../types'
+
+const WS_URL = 'ws://127.0.0.1:8765'
+const HISTORY_LIMIT = 150
+
+export function useTelemetry() {
+  const status = ref<ConnectionStatus>('connecting')
+  const sourceLabel = ref('WebSocket 连接中')
+  const current = ref<TelemetrySnapshot>(makeSyntheticSnapshot(0))
+  const history = ref<TelemetrySnapshot[]>([])
+  const transitions = ref<TransitionRecord[]>([])
+  const fallbackFrames = ref<TelemetrySnapshot[]>([])
+
+  let socket: WebSocket | null = null
+  let fallbackTimer = 0
+  let fallbackIndex = 0
+
+  const totalCommand = computed(() =>
+    current.value.command_mw.reduce((sum, value) => sum + value, 0),
+  )
+
+  const estimatedLoad = computed(() => {
+    const note = current.value.note.match(/demand=([0-9.]+)/)
+    if (note) {
+      return Number(note[1])
+    }
+    return Math.max(42, totalCommand.value + 8 + Math.sin(current.value.elapsed_s / 12) * 5)
+  })
+
+  function start() {
+    void loadFallbackFrames()
+    connectWebSocket()
+    fallbackTimer = window.setInterval(() => {
+      if (status.value !== 'live') {
+        status.value = 'fallback'
+        sourceLabel.value = '离线演示数据'
+        pushSnapshot(nextFallbackFrame())
+      }
+    }, 1000)
+  }
+
+  function stop() {
+    if (socket) {
+      socket.close()
+      socket = null
+    }
+    window.clearInterval(fallbackTimer)
+  }
+
+  function connectWebSocket() {
+    try {
+      socket = new WebSocket(WS_URL)
+    } catch {
+      status.value = 'fallback'
+      sourceLabel.value = '离线演示数据'
+      return
+    }
+
+    socket.onopen = () => {
+      status.value = 'live'
+      sourceLabel.value = 'Python WebSocket 实时流'
+    }
+
+    socket.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data as string) as TelemetryPayload
+        pushSnapshot(normalizePayload(payload))
+      } catch {
+        status.value = 'fallback'
+        sourceLabel.value = '实时数据解析失败，已切换演示数据'
+      }
+    }
+
+    socket.onerror = () => {
+      status.value = 'fallback'
+      sourceLabel.value = 'WebSocket 未连接，使用演示数据'
+    }
+
+    socket.onclose = () => {
+      if (status.value === 'live') {
+        sourceLabel.value = '实时连接已断开，使用演示数据'
+      }
+      status.value = 'fallback'
+    }
+  }
+
+  async function loadFallbackFrames() {
+    try {
+      const response = await fetch('/data/demo_telemetry.jsonl')
+      const text = await response.text()
+      const frames = text
+        .split(/\r?\n/)
+        .filter(Boolean)
+        .map((line) => normalizeSnapshot(JSON.parse(line) as Partial<TelemetrySnapshot>))
+      fallbackFrames.value = frames.length > 0 ? frames : buildSyntheticFrames()
+    } catch {
+      fallbackFrames.value = buildSyntheticFrames()
+    }
+  }
+
+  function nextFallbackFrame() {
+    const frames = fallbackFrames.value.length > 0 ? fallbackFrames.value : buildSyntheticFrames()
+    const frame = frames[fallbackIndex % frames.length]
+    fallbackIndex += 1
+    return frame
+  }
+
+  function pushSnapshot(snapshot: TelemetrySnapshot) {
+    const previous = history.value.at(-1)
+    if (previous && previous.mode !== snapshot.mode) {
+      transitions.value = [
+        ...transitions.value,
+        {
+          elapsed_s: snapshot.elapsed_s,
+          from: previous.mode,
+          to: snapshot.mode,
+          delay_ms: snapshot.average_delay_ms,
+          loss_rate: snapshot.max_loss_rate,
+          reason: inferReason(previous.mode, snapshot.mode),
+        },
+      ].slice(-12)
+    }
+    current.value = snapshot
+    history.value = [...history.value, snapshot].slice(-HISTORY_LIMIT)
+  }
+
+  onMounted(start)
+  onUnmounted(stop)
+
+  return {
+    current,
+    estimatedLoad,
+    history,
+    sourceLabel,
+    status,
+    totalCommand,
+    transitions,
+  }
+}
+
+function inferReason(from: OperatingMode, to: OperatingMode) {
+  if (from === 'global_cooperative' && to === 'local_cluster') {
+    return '通信降级，进入局部协同'
+  }
+  if (from === 'local_cluster' && to === 'autonomous') {
+    return '严重弱通信，切换自治'
+  }
+  if (from === 'autonomous' && to === 'local_cluster') {
+    return '链路恢复，重建聚类'
+  }
+  if (from === 'local_cluster' && to === 'global_cooperative') {
+    return '质量恢复，回到全局'
+  }
+  return '状态机滞回切换'
+}
+
+function normalizePayload(payload: TelemetryPayload): TelemetrySnapshot {
+  return normalizeSnapshot({
+    ...payload,
+    target_mw: payload.dispatch.target_mw,
+    command_mw: payload.dispatch.command_mw,
+    max_delta_mw: payload.dispatch.max_delta_mw,
+    backend: payload.dispatch.backend,
+    note: payload.dispatch.note,
+  })
+}
+
+function normalizeSnapshot(raw: Partial<TelemetrySnapshot>): TelemetrySnapshot {
+  const mode = (raw.mode ?? 'global_cooperative') as OperatingMode
+  return {
+    elapsed_s: Number(raw.elapsed_s ?? 0),
+    mode,
+    mode_label: raw.mode_label ?? MODE_LABELS[mode],
+    average_delay_ms: Number(raw.average_delay_ms ?? 45),
+    max_loss_rate: Number(raw.max_loss_rate ?? 0.02),
+    links: normalizeLinks(raw.links),
+    clusters: raw.clusters ?? [[1, 2, 3, 4, 5]],
+    target_mw: toFive(raw.target_mw),
+    command_mw: toFive(raw.command_mw),
+    max_delta_mw: Number(raw.max_delta_mw ?? 0),
+    backend: raw.backend ?? 'local demo',
+    note: raw.note ?? '',
+  }
+}
+
+function normalizeLinks(raw?: LinkMap): LinkMap {
+  const links: LinkMap = {}
+  LINK_KEYS.forEach((key, index) => {
+    const baseDelay = 42 + index * 4
+    links[key] = raw?.[key] ?? {
+      delay_ms: baseDelay,
+      loss_rate: 0.012 + index * 0.002,
+      available: true,
+    }
+  })
+  return links
+}
+
+function toFive(values?: number[]) {
+  const safeValues = Array.isArray(values) ? values : []
+  return Array.from({ length: 5 }, (_, index) => Number(safeValues[index] ?? 0))
+}
+
+function buildSyntheticFrames() {
+  return Array.from({ length: 121 }, (_, index) => makeSyntheticSnapshot(index))
+}
+
+function makeSyntheticSnapshot(elapsed: number): TelemetrySnapshot {
+  const severity = syntheticSeverity(elapsed)
+  const mode: OperatingMode =
+    severity > 0.82 ? 'autonomous' : severity > 0.28 ? 'local_cluster' : 'global_cooperative'
+  const delay = 42 + severity * 370
+  const loss = 0.018 + severity * 0.48
+  const links: LinkMap = {}
+
+  LINK_KEYS.forEach((key, index) => {
+    const wave = Math.sin(elapsed / 8 + index * 0.7) * 0.04
+    const linkLoss = Math.max(0, Math.min(0.95, loss + wave))
+    links[key] = {
+      delay_ms: Math.max(25, delay + Math.sin(elapsed / 7 + index) * 18 + index * 3),
+      loss_rate: linkLoss,
+      available: linkLoss < 0.35,
+    }
+  })
+
+  const solar = Math.max(0, Math.sin((elapsed / 120) * Math.PI) * 16)
+  const wind = 13 + Math.sin(elapsed / 9) * 5 + severity * 3
+  const bess = mode === 'autonomous' ? Math.max(0, 10 - (elapsed - 53) * 0.24) : 3 - severity * 5
+
+  return {
+    elapsed_s: elapsed,
+    mode,
+    mode_label: MODE_LABELS[mode],
+    average_delay_ms: delay,
+    max_loss_rate: loss,
+    links,
+    clusters: mode === 'autonomous' ? [[1], [2], [3], [4], [5]] : [[1, 2, 3, 4, 5]],
+    target_mw: [solar, solar * 0.78, wind, wind * 0.82, bess],
+    command_mw: [solar, solar * 0.78, wind, wind * 0.82, bess],
+    max_delta_mw: 2.5,
+    backend: 'offline demo',
+    note: `demand=${(58 + Math.sin(elapsed / 11) * 8).toFixed(2)}MW`,
+  }
+}
+
+function syntheticSeverity(elapsed: number) {
+  if (elapsed < 25) {
+    return elapsed / 25 * 0.22
+  }
+  if (elapsed < 52) {
+    return 0.22 + ((elapsed - 25) / 27) * 0.66
+  }
+  if (elapsed < 88) {
+    return 0.92
+  }
+  if (elapsed < 112) {
+    return 0.92 - ((elapsed - 88) / 24) * 0.72
+  }
+  return 0.2 - Math.min(0.18, ((elapsed - 112) / 8) * 0.18)
+}

@@ -1,0 +1,87 @@
+Adaptive VPP quick demo verification log
+Generated at: 2026-07-02T18:02:11
+Run status: normal_end_no_error
+Latest text log: C:\Users\23307\Desktop\揭榜挂帅\弱通信自适应虚拟电厂分布式协调控制系统\logs\adaptive_vpp\adaptive_vpp_20260702_180122.log
+Latest telemetry jsonl: C:\Users\23307\Desktop\揭榜挂帅\弱通信自适应虚拟电厂分布式协调控制系统\logs\adaptive_vpp\adaptive_vpp_20260702_180122.jsonl
+MATLAB backend status: backend=MATLAB Engine et_admm_robust
+Previous fallback telemetry used for comparison: C:\Users\23307\Desktop\揭榜挂帅\弱通信自适应虚拟电厂分布式协调控制系统\logs\adaptive_vpp\adaptive_vpp_20260702_163641.jsonl
+Previous backend status: backend=local fallback (MATLAB Engine unavailable: No module named 'matlab')
+Overall max per-step command delta: 2.500 MW
+
+1) Complete state transition records
+elapsed_s | from -> to | time_delay_ms | loss_rate | max_command_delta_mw
+   28.0 | global_cooperative -> local_cluster |         121.1 | 0.124 | 2.500
+   53.0 | local_cluster -> autonomous |         345.6 | 0.411 | 2.500
+   90.0 | autonomous -> local_cluster |         253.8 | 0.300 | 2.500
+  111.0 | local_cluster -> global_cooperative |          72.4 | 0.070 | 2.500
+
+2) AUTONOMOUS interval command trace
+AUTONOMOUS elapsed_s range: 53.0s to 89.0s
+Max per-step delta inside AUTONOMOUS: 2.500 MW
+Smooth transition check: PASS (max_delta_mw <= 2.500 MW per step)
+elapsed_s | node1 | node2 | node3 | node4 | node5 | max_delta_mw
+   53.0 | 12.671 | 11.948 | 16.948 | 17.671 |  8.004 | 2.500
+   54.0 | 10.171 |  9.448 | 19.448 | 20.171 |  5.504 | 2.500
+   55.0 |  7.671 |  6.948 | 16.948 | 17.671 |  4.953 | 2.500
+   56.0 |  5.171 |  4.448 | 14.448 | 15.171 |  4.458 | 2.500
+   57.0 |  3.714 |  2.810 | 11.948 | 12.671 |  4.012 | 2.500
+   58.0 |  3.714 |  2.810 |  9.448 | 10.171 |  3.611 | 2.500
+   59.0 |  3.714 |  2.810 |  7.075 |  7.671 |  3.250 | 2.500
+   60.0 |  1.214 |  0.822 |  4.575 |  5.171 |  2.925 | 2.500
+   61.0 |  1.080 |  0.822 |  3.808 |  2.671 |  2.632 | 2.500
+   62.0 |  1.080 |  0.822 |  3.808 |  1.359 |  2.369 | 1.312
+   63.0 |  1.080 |  0.822 |  3.808 |  1.359 |  2.132 | 0.237
+   64.0 |  1.080 |  0.822 |  3.808 |  1.359 |  1.919 | 0.213
+   65.0 |  0.000 |  0.000 |  1.308 |  1.241 |  1.727 | 2.500
+   66.0 |  0.000 |  0.000 |  1.182 |  1.241 |  1.554 | 0.173
+   67.0 |  0.000 |  0.000 |  1.182 |  1.241 |  1.399 | 0.155
+   68.0 |  0.000 |  0.000 |  1.182 |  1.241 |  1.259 | 0.140
+   69.0 |  0.000 |  0.000 |  1.182 |  1.241 |  1.133 | 0.126
+   70.0 |  0.000 |  0.000 |  0.379 |  0.306 |  1.020 | 0.935
+   71.0 |  0.000 |  0.000 |  0.379 |  0.306 |  0.918 | 0.102
+   72.0 |  0.000 |  0.000 |  0.379 |  0.306 |  0.826 | 0.092
+   73.0 |  0.000 |  0.000 |  0.379 |  0.306 |  0.743 | 0.083
+   74.0 |  0.000 |  0.000 |  0.379 |  0.306 |  0.669 | 0.074
+   75.0 |  0.000 |  0.000 |  0.000 |  0.000 |  0.602 | 0.379
+   76.0 |  0.000 |  0.000 |  0.000 |  0.000 |  0.542 | 0.060
+   77.0 |  0.000 |  0.000 |  0.000 |  0.000 |  0.488 | 0.054
+   78.0 |  0.000 |  0.000 |  0.000 |  0.000 |  0.439 | 0.049
+   79.0 |  0.000 |  0.000 |  0.000 |  0.000 |  0.395 | 0.044
+   80.0 |  0.000 |  0.000 |  0.000 |  0.000 |  0.356 | 0.040
+   81.0 |  0.000 |  0.000 |  0.000 |  0.000 |  0.320 | 0.036
+   82.0 |  0.000 |  0.000 |  0.000 |  0.000 |  0.288 | 0.032
+   83.0 |  0.000 |  0.000 |  0.000 |  0.000 |  0.259 | 0.029
+   84.0 |  0.000 |  0.000 |  0.000 |  0.000 |  0.233 | 0.026
+   85.0 |  0.000 |  0.000 |  0.000 |  0.000 |  0.210 | 0.023
+   86.0 |  0.000 |  0.000 |  0.000 |  0.000 |  0.189 | 0.021
+   87.0 |  0.000 |  0.000 |  0.000 |  0.000 |  0.170 | 0.019
+   88.0 |  0.000 |  0.000 |  0.000 |  0.000 |  0.153 | 0.017
+   89.0 |  0.000 |  0.000 |  0.000 |  0.000 |  0.138 | 0.015
+
+3) MATLAB Engine run vs previous fallback run dispatch comparison
+Compared points: 121
+Max absolute command difference: 0.001000 MW
+Mean per-node absolute command difference: 0.000010 MW
+Comparison result: commands are numerically identical within 1e-3 MW tolerance.
+elapsed_s | max_abs_command_diff_mw | matlab_command | previous_fallback_command
+    0.0 |                0.000000 | [2.5, 2.5, 2.5, 2.5, -2.5] | [2.5, 2.5, 2.5, 2.5, -2.5]
+    5.0 |                0.001000 | [7.726, 3.873, 15.0, 14.063, -2.718] | [7.726, 3.873, 15.0, 14.063, -2.719]
+    6.0 |                0.001000 | [7.726, 3.873, 17.5, 14.063, -2.718] | [7.726, 3.873, 17.5, 14.063, -2.719]
+    7.0 |                0.001000 | [7.726, 3.873, 20.0, 14.063, -2.718] | [7.726, 3.873, 20.0, 14.063, -2.719]
+    8.0 |                0.001000 | [7.726, 3.873, 20.648, 14.063, -2.718] | [7.726, 3.873, 20.648, 14.063, -2.719]
+    9.0 |                0.001000 | [7.726, 3.873, 20.648, 14.063, -2.718] | [7.726, 3.873, 20.648, 14.063, -2.719]
+   28.0 |                0.000000 | [9.065, 6.675, 18.645, 11.973, -0.079] | [9.065, 6.675, 18.645, 11.973, -0.079]
+   53.0 |                0.000000 | [12.671, 11.948, 16.948, 17.671, 8.004] | [12.671, 11.948, 16.948, 17.671, 8.004]
+   90.0 |                0.000000 | [2.5, 2.5, 2.5, 2.5, 2.638] | [2.5, 2.5, 2.5, 2.5, 2.638]
+  111.0 |                0.000000 | [10.055, 8.308, 13.308, 13.308, 8.308] | [10.055, 8.308, 13.308, 13.308, 8.308]
+  120.0 |                0.001000 | [8.037, 4.116, 21.047, 14.392, -2.607] | [8.037, 4.116, 21.048, 14.392, -2.607]
+
+4) Mode path
+global_cooperative -> local_cluster -> autonomous -> local_cluster -> global_cooperative
+
+5) Raw transition lines from latest text log
+2026-07-02 18:01:22,308 MATLAB_ENGINE_STATUS backend=MATLAB Engine et_admm_robust
+2026-07-02 18:01:22,878 TRANSITION t=28.0s GLOBAL->CLUSTER avg_delay=121.1ms max_loss=0.124 reason=degraded_to_cluster clusters=[[1, 2, 3, 4, 5]] max_output_delta=2.500MW before=[8.113, 4.175, 21.145, 14.473, -2.579] after=[9.065, 6.675, 18.645, 11.973, -0.079]
+2026-07-02 18:01:22,888 TRANSITION t=53.0s CLUSTER->AUTONOMOUS avg_delay=345.6ms max_loss=0.411 reason=severe_to_autonomous clusters=[[1], [2], [3], [4], [5]] max_output_delta=2.500MW before=[15.171, 14.448, 14.448, 15.171, 10.504] after=[12.671, 11.948, 16.948, 17.671, 8.004]
+2026-07-02 18:01:22,908 TRANSITION t=90.0s AUTONOMOUS->CLUSTER avg_delay=253.8ms max_loss=0.300 reason=partial_recovery_to_cluster clusters=[[1, 2, 3, 4, 5]] max_output_delta=2.500MW before=[0.0, 0.0, 0.0, 0.0, 0.138] after=[2.5, 2.5, 2.5, 2.5, 2.638]
+2026-07-02 18:01:22,931 TRANSITION t=111.0s CLUSTER->GLOBAL avg_delay=72.4ms max_loss=0.070 reason=recovered_to_global clusters=[[1, 2, 3, 4, 5]] max_output_delta=2.500MW before=[10.808, 10.808, 10.808, 10.808, 10.808] after=[10.055, 8.308, 13.308, 13.308, 8.308]
