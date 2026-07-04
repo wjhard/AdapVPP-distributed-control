@@ -14,3 +14,8 @@ data/raw/load/ercot_native_load_2023.zip
 *.tmp
 Thumbs.db
 .DS_Store
+
+# Downloaded local chaos-testing binaries.
+tools/toxiproxy/*.exe
+tools/toxiproxy/*.log
+tools/toxiproxy/version.txt

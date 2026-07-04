@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from pathlib import Path
 from typing import Dict, List
 
@@ -12,6 +13,7 @@ from .models import DispatchResult, MODE_LABELS, OperatingMode, QualitySnapshot,
 from .resource_profile import ResourceProfile
 from .runtime_logging import RunLogger
 from .state_machine import AdaptiveStateMachine
+from .toxiproxy_network import ToxiproxyLinkQualitySource
 from .websocket_server import TelemetryWebSocketServer
 
 
@@ -24,20 +26,36 @@ class AdaptiveVppDemo:
         websocket_host: str = "127.0.0.1",
         websocket_port: int = 8765,
         realtime: bool = True,
+        use_toxiproxy: bool = False,
+        toxiproxy_api_port: int = 8474,
+        force_bad_link: str | None = None,
+        force_bad_start_s: float = 35.0,
+        force_bad_duration_s: float = 12.0,
     ) -> None:
         self.project_root = project_root
         self.duration_s = duration_s
         self.interval_s = interval_s
         self.realtime = realtime
+        self.use_toxiproxy = use_toxiproxy
 
-        self.link_quality = LinkQualitySimulator(cycle_s=duration_s)
+        self.run_logger = RunLogger(project_root)
+        if use_toxiproxy:
+            self.link_quality = ToxiproxyLinkQualitySource(
+                project_root=project_root,
+                cycle_s=duration_s,
+                api_port=toxiproxy_api_port,
+                force_bad_link=force_bad_link,
+                force_bad_start_s=force_bad_start_s,
+                force_bad_duration_s=force_bad_duration_s,
+            )
+        else:
+            self.link_quality = LinkQualitySimulator(cycle_s=duration_s)
         self.state_machine = AdaptiveStateMachine(min_dwell_s=3.0)
         self.clusterer = ConnectivityClusterer()
         self.resources = ResourceProfile(project_root)
         self.backend = MatlabDispatchBackend(project_root)
         self.dispatcher = AdaptiveDispatcher(self.backend)
         self.websocket = TelemetryWebSocketServer(websocket_host, websocket_port)
-        self.run_logger = RunLogger(project_root)
         self.visited_modes: List[OperatingMode] = [OperatingMode.GLOBAL]
 
     async def run(self) -> None:
@@ -47,40 +65,71 @@ class AdaptiveVppDemo:
         else:
             self.run_logger.info(f"WEBSOCKET_STATUS disabled reason={self.websocket.error}")
         self.run_logger.backend_status(self.backend.label)
+        await self._start_link_quality_source()
 
-        total_steps = int(self.duration_s / self.interval_s) + 1
-        for step in range(total_steps):
-            elapsed_s = min(step * self.interval_s, self.duration_s)
-            quality = self.link_quality.sample(elapsed_s)
-            decision = self.state_machine.update(elapsed_s, quality.average_delay_ms, quality.max_loss_rate)
-            if decision.changed:
-                self.visited_modes.append(decision.mode)
+        link_diagnostics: List[str] = []
+        try:
+            try:
+                total_steps = int(self.duration_s / self.interval_s) + 1
+                for step in range(total_steps):
+                    elapsed_s = min(step * self.interval_s, self.duration_s)
+                    quality = await self._sample_quality(elapsed_s)
+                    decision = self.state_machine.update(elapsed_s, quality.average_delay_ms, quality.max_loss_rate)
+                    if decision.changed:
+                        self.visited_modes.append(decision.mode)
 
-            clusters = self._clusters_for_mode(decision.mode, quality)
-            resource = self.resources.sample(elapsed_s, self.duration_s)
-            dispatch = self.dispatcher.dispatch(decision.mode, quality, clusters, resource, self.interval_s)
+                    clusters = self._clusters_for_mode(decision.mode, quality)
+                    resource = self.resources.sample(elapsed_s, self.duration_s)
+                    dispatch = self.dispatcher.dispatch(decision.mode, quality, clusters, resource, self.interval_s)
 
-            if decision.changed:
-                self.run_logger.transition(decision, quality, dispatch)
-            self.run_logger.snapshot(quality, decision, dispatch)
-            await self.websocket.broadcast(self._payload(quality, decision, dispatch))
+                    if decision.changed:
+                        self.run_logger.transition(decision, quality, dispatch)
+                    self.run_logger.snapshot(quality, decision, dispatch)
+                    await self.websocket.broadcast(self._payload(quality, decision, dispatch))
 
-            if self.realtime and step < total_steps - 1:
-                await asyncio.sleep(self.interval_s)
+                    if self.realtime and step < total_steps - 1:
+                        await asyncio.sleep(self.interval_s)
+            finally:
+                await self.websocket.stop()
 
-        await self.websocket.stop()
+            link_diagnostics = self.link_quality.diagnostic_lines()
+        finally:
+            await self._stop_link_quality_source()
+
         self.run_logger.info(
             "DEMO_COMPLETE visited_modes="
             + "->".join(mode.name for mode in self.visited_modes)
         )
-        link_diagnostics = self.link_quality.diagnostic_lines()
         for line in link_diagnostics:
             self.run_logger.info(line)
         self.run_logger.print_key_fragments()
         print("\nVisited modes:", " -> ".join(MODE_LABELS[mode] for mode in self.visited_modes))
-        print("\n=== Gilbert-Elliott link diagnostics ===")
+        title = "Toxiproxy measured link diagnostics" if self.use_toxiproxy else "Gilbert-Elliott link diagnostics"
+        print(f"\n=== {title} ===")
         for line in link_diagnostics:
             print(line)
+
+    async def _start_link_quality_source(self) -> None:
+        start = getattr(self.link_quality, "start", None)
+        if start is None:
+            return
+        result = start(self.run_logger.info)
+        if inspect.isawaitable(result):
+            await result
+
+    async def _stop_link_quality_source(self) -> None:
+        stop = getattr(self.link_quality, "stop", None)
+        if stop is None:
+            return
+        result = stop()
+        if inspect.isawaitable(result):
+            await result
+
+    async def _sample_quality(self, elapsed_s: float) -> QualitySnapshot:
+        result = self.link_quality.sample(elapsed_s)
+        if inspect.isawaitable(result):
+            return await result
+        return result
 
     def _clusters_for_mode(self, mode: OperatingMode, quality: QualitySnapshot) -> List[List[int]]:
         if mode == OperatingMode.GLOBAL:

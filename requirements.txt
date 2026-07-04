@@ -9,3 +9,4 @@ requests
 pvlib
 openpyxl
 websockets
+toxiproxy-python
