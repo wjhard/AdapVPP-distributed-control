@@ -10,6 +10,8 @@ const props = defineProps<{
   scenarios: Record<string, ScenarioResult>
 }>()
 
+const gapImageUrl = '/data/optimality_gap_convergence.png'
+
 const convergenceOption = computed<EChartsOption>(() => {
   const items = [
     { key: 'scenario2', name: 'ET-ADMM 轻度', color: '#29e6bb' },
@@ -63,13 +65,21 @@ const robustRows = computed(() =>
 const standardRows = computed(() =>
   props.monteCarlo.filter((row) => row.Method.toLowerCase().includes('standard')),
 )
-const robustSuccess = computed(() => average(robustRows.value.map((row) => Number(row.ConvergenceSuccessRate))))
+const robustSuccess = computed(() =>
+  average(robustRows.value.map((row) => Number(row.ConvergenceSuccessRate))),
+)
 const standardSuccess = computed(() =>
   average(standardRows.value.map((row) => Number(row.ConvergenceSuccessRate))),
 )
-const robustCommSaving = computed(() => average(robustRows.value.map((row) => Number(row.CommSavingMean))))
-const heavyLoss = computed(() => Number(props.costGap[1]?.AnnualizedLoss ?? props.costGap[0]?.AnnualizedLoss ?? 0))
-const heavyGap = computed(() => Number(props.costGap[1]?.PercentGap ?? props.costGap[0]?.PercentGap ?? 0))
+const robustCommSaving = computed(() =>
+  average(robustRows.value.map((row) => Number(row.CommSavingMean))),
+)
+const heavyLoss = computed(() =>
+  Number(props.costGap[1]?.AnnualizedLoss ?? props.costGap[0]?.AnnualizedLoss ?? 0),
+)
+const heavyGap = computed(() =>
+  Number(props.costGap[1]?.PercentGap ?? props.costGap[0]?.PercentGap ?? 0),
+)
 
 function toPairs(values: number[]) {
   return values.map((value, index) => [index + 1, Math.max(Number(value), 1e-8)])
@@ -93,6 +103,18 @@ function money(value: number) {
     <div class="algorithm-board__chart">
       <VChart class="chart" :option="convergenceOption" autoresize />
     </div>
+
+    <div class="algorithm-board__gap-panel">
+      <div class="gap-panel__title">
+        <span>最优性间隙收敛曲线</span>
+        <em>optimality gap</em>
+      </div>
+      <img class="gap-panel__image" :src="gapImageUrl" alt="最优性间隙收敛曲线" />
+      <p class="algorithm-board__methodology">
+        本方案采用与国际主流分布式优化文献一致的最优性验证方法：将分布式ADMM迭代过程中每一步的解，与通过独立凸优化求解器计算得到的理论最优解进行逐次比对，追踪最优性间隙的完整收敛轨迹，而非仅比较最终结果，确保收敛过程本身具备数学上的可验证性。
+      </p>
+    </div>
+
     <div class="algorithm-board__cards">
       <div class="algo-card algo-card--success">
         <span>本方案收敛成功率</span>

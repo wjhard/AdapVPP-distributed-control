@@ -641,28 +641,99 @@ textarea {
 .algorithm-board {
   height: 100%;
   display: grid;
-  grid-template-columns: 1.45fr 1fr;
-  gap: 16px;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.95fr) minmax(480px, 0.9fr);
+  gap: 12px;
 }
 
 .algorithm-board__chart {
+  grid-column: 1;
+  grid-row: 1;
   min-width: 0;
   min-height: 0;
+  padding: 4px;
+  border: 1px solid rgba(91, 216, 255, 0.12);
+  border-radius: 6px;
+  background: rgba(4, 18, 24, 0.36);
+}
+
+.algorithm-board__gap-panel {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(255, 142, 142, 0.18);
+  border-radius: 6px;
+  background: rgba(7, 30, 37, 0.58);
+  overflow: hidden;
+}
+
+.gap-panel__title {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.gap-panel__title span {
+  color: #f3fdff;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.gap-panel__title em {
+  color: #ffb3b3;
+  font-family: Consolas, "Roboto Mono", monospace;
+  font-size: 11px;
+  font-style: normal;
+  text-transform: uppercase;
+}
+
+.gap-panel__image {
+  flex: 1 1 0;
+  min-height: 0;
+  width: 100%;
+  object-fit: contain;
+  border-radius: 4px;
+  background: rgba(230, 248, 255, 0.96);
 }
 
 .algorithm-board__cards {
+  grid-column: 3;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
   align-content: stretch;
+}
+
+.algorithm-board__methodology {
+  flex: 0 0 auto;
+  min-width: 0;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 142, 142, 0.16);
+  border-radius: 6px;
+  color: #a9cbd7;
+  background: rgba(5, 22, 28, 0.72);
+  font-size: 11px;
+  line-height: 1.42;
+  overflow: hidden;
 }
 
 .algo-card {
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding: 14px;
+  padding: 10px 12px;
   border: 1px solid rgba(91, 216, 255, 0.16);
   border-radius: 8px;
   background: rgba(7, 30, 37, 0.78);
@@ -676,22 +747,22 @@ textarea {
 
 .algo-card span {
   color: #9ec4d0;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .algo-card strong {
-  margin-top: 8px;
+  margin-top: 6px;
   color: #f4ffff;
   font-family: Consolas, "Roboto Mono", monospace;
-  font-size: 25px;
+  font-size: 22px;
   line-height: 1.05;
   overflow-wrap: anywhere;
 }
 
 .algo-card em {
-  margin-top: 8px;
+  margin-top: 6px;
   color: #78a3b2;
-  font-size: 12px;
+  font-size: 11px;
   font-style: normal;
 }
 
