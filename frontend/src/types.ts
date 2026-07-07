@@ -59,6 +59,8 @@ export type TransitionRecord = {
   delay_ms: number
   loss_rate: number
   reason?: string
+  before_mw?: number[]
+  after_mw?: number[]
 }
 
 export type ScenarioResult = {
@@ -94,11 +96,25 @@ export type CostGapRow = {
   PercentGap: string
 }
 
+export type OptimalityGapRow = {
+  Scenario: string
+  Iteration: string
+  DistanceToPStarMW: string
+  OptimalityGap: string
+  OptimalityGapForLog: string
+}
+
 export type StaticVerificationData = {
   scenarios: Record<string, ScenarioResult>
   monteCarlo: MonteCarloRow[]
   costGap: CostGapRow[]
+  optimalityGap: OptimalityGapRow[]
   transitions: TransitionRecord[]
 }
+
+export type DrilldownView =
+  | { type: 'node'; nodeId: number }
+  | { type: 'link'; linkKey: string }
+  | { type: 'transition'; record: TransitionRecord }
 
 export type ConnectionStatus = 'connecting' | 'live' | 'fallback'

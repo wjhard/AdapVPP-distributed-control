@@ -2,15 +2,15 @@
 import type { EChartsOption } from 'echarts'
 import { computed } from 'vue'
 import VChart from 'vue-echarts'
-import type { CostGapRow, MonteCarloRow, ScenarioResult } from '../types'
+import type { CostGapRow, MonteCarloRow, OptimalityGapRow, ScenarioResult } from '../types'
+import OptimalityGapChart from './OptimalityGapChart.vue'
 
 const props = defineProps<{
   costGap: CostGapRow[]
   monteCarlo: MonteCarloRow[]
+  optimalityGap: OptimalityGapRow[]
   scenarios: Record<string, ScenarioResult>
 }>()
-
-const gapImageUrl = '/data/optimality_gap_convergence.png'
 
 const convergenceOption = computed<EChartsOption>(() => {
   const items = [
@@ -105,11 +105,7 @@ function money(value: number) {
     </div>
 
     <div class="algorithm-board__gap-panel">
-      <div class="gap-panel__title">
-        <span>最优性间隙收敛曲线</span>
-        <em>optimality gap</em>
-      </div>
-      <img class="gap-panel__image" :src="gapImageUrl" alt="最优性间隙收敛曲线" />
+      <OptimalityGapChart :rows="optimalityGap" />
       <p class="algorithm-board__methodology">
         本方案采用与国际主流分布式优化文献一致的最优性验证方法：将分布式ADMM迭代过程中每一步的解，与通过独立凸优化求解器计算得到的理论最优解进行逐次比对，追踪最优性间隙的完整收敛轨迹，而非仅比较最终结果，确保收敛过程本身具备数学上的可验证性。
       </p>

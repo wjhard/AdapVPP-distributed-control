@@ -8,6 +8,10 @@ const props = defineProps<{
   staticTransitions: TransitionRecord[]
 }>()
 
+const emit = defineEmits<{
+  transitionSelected: [record: TransitionRecord]
+}>()
+
 const records = computed(() =>
   (props.liveTransitions.length > 0 ? props.liveTransitions : props.staticTransitions).slice(-6),
 )
@@ -15,7 +19,15 @@ const records = computed(() =>
 
 <template>
   <ol class="timeline">
-    <li v-for="record in records" :key="`${record.elapsed_s}-${record.from}-${record.to}`">
+    <li
+      v-for="record in records"
+      :key="`${record.elapsed_s}-${record.from}-${record.to}`"
+      class="timeline__item"
+      role="button"
+      tabindex="0"
+      @click="emit('transitionSelected', record)"
+      @keydown.enter.prevent="emit('transitionSelected', record)"
+    >
       <span class="timeline__dot" :style="{ background: MODE_COLORS[record.to] }"></span>
       <div class="timeline__main">
         <strong>{{ record.elapsed_s.toFixed(1) }}s</strong>

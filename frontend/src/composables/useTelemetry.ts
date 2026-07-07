@@ -126,6 +126,8 @@ export function useTelemetry() {
           delay_ms: snapshot.average_delay_ms,
           loss_rate: snapshot.max_loss_rate,
           reason: inferReason(previous.mode, snapshot.mode),
+          before_mw: [...previous.command_mw],
+          after_mw: [...snapshot.command_mw],
         },
       ].slice(-12)
     }
@@ -160,7 +162,7 @@ function inferReason(from: OperatingMode, to: OperatingMode) {
   if (from === 'local_cluster' && to === 'global_cooperative') {
     return '质量恢复，回到全局'
   }
-  return '状态机滞回切换'
+  return '状态滞回切换'
 }
 
 function normalizePayload(payload: TelemetryPayload): TelemetrySnapshot {
@@ -254,7 +256,7 @@ function makeSyntheticSnapshot(elapsed: number): TelemetrySnapshot {
 
 function syntheticSeverity(elapsed: number) {
   if (elapsed < 25) {
-    return elapsed / 25 * 0.22
+    return (elapsed / 25) * 0.22
   }
   if (elapsed < 52) {
     return 0.22 + ((elapsed - 25) / 27) * 0.66

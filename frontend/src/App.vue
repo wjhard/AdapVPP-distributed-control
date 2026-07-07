@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import AlgorithmBoard from './components/AlgorithmBoard.vue'
 import CommunicationQualityChart from './components/CommunicationQualityChart.vue'
 import DashboardPanel from './components/DashboardPanel.vue'
+import DrilldownPanel from './components/DrilldownPanel.vue'
 import EfficiencyGauge from './components/EfficiencyGauge.vue'
 import PowerTrendChart from './components/PowerTrendChart.vue'
 import TimelinePanel from './components/TimelinePanel.vue'
@@ -11,6 +12,7 @@ import TopologyMap from './components/TopologyMap.vue'
 import { useTelemetry } from './composables/useTelemetry'
 import { useVerificationData } from './composables/useVerificationData'
 import { NODES } from './constants'
+import type { DrilldownView, TransitionRecord } from './types'
 
 const BASE_WIDTH = 1920
 const BASE_HEIGHT = 1080
@@ -18,6 +20,7 @@ const BASE_HEIGHT = 1080
 const telemetry = useTelemetry()
 const verification = useVerificationData()
 const viewportScale = ref(1)
+const drilldown = ref<DrilldownView | null>(null)
 
 const screenStyle = computed(() => ({
   transform: `scale(${viewportScale.value})`,
@@ -44,6 +47,22 @@ const activeLinks = computed(
 
 function updateScale() {
   viewportScale.value = Math.min(window.innerWidth / BASE_WIDTH, window.innerHeight / BASE_HEIGHT)
+}
+
+function openNodeDrilldown(nodeId: number) {
+  drilldown.value = { type: 'node', nodeId }
+}
+
+function openLinkDrilldown(linkKey: string) {
+  drilldown.value = { type: 'link', linkKey }
+}
+
+function openTransitionDrilldown(record: TransitionRecord) {
+  drilldown.value = { type: 'transition', record }
+}
+
+function closeDrilldown() {
+  drilldown.value = null
 }
 
 onMounted(() => {
@@ -85,12 +104,22 @@ onUnmounted(() => {
           <template #meta>
             <span class="panel-meta">{{ activeLinks }}/10 链路可用</span>
           </template>
-          <TopologyMap :snapshot="telemetry.current.value" />
+          <TopologyMap
+            :snapshot="telemetry.current.value"
+            @link-selected="openLinkDrilldown"
+            @node-selected="openNodeDrilldown"
+          />
           <div class="node-strip">
-            <div v-for="(node, index) in NODES" :key="node.id" class="node-strip__item">
+            <button
+              v-for="(node, index) in NODES"
+              :key="node.id"
+              class="node-strip__item"
+              type="button"
+              @click="openNodeDrilldown(node.id)"
+            >
               <span>{{ node.key }}</span>
               <strong>{{ telemetry.current.value.command_mw[index].toFixed(2) }} MW</strong>
-            </div>
+            </button>
           </div>
         </DashboardPanel>
 
@@ -105,6 +134,7 @@ onUnmounted(() => {
           <TimelinePanel
             :live-transitions="telemetry.transitions.value"
             :static-transitions="verification.data.value.transitions"
+            @transition-selected="openTransitionDrilldown"
           />
         </DashboardPanel>
 
@@ -128,9 +158,18 @@ onUnmounted(() => {
           <AlgorithmBoard
             :cost-gap="verification.data.value.costGap"
             :monte-carlo="verification.data.value.monteCarlo"
+            :optimality-gap="verification.data.value.optimalityGap"
             :scenarios="verification.data.value.scenarios"
           />
         </DashboardPanel>
+
+        <DrilldownPanel
+          :current="telemetry.current.value"
+          :history="telemetry.history.value"
+          :scenarios="verification.data.value.scenarios"
+          :view="drilldown"
+          @close="closeDrilldown"
+        />
       </div>
     </div>
   </main>

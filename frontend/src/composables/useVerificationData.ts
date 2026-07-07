@@ -4,6 +4,7 @@ import type {
   CostGapRow,
   MonteCarloRow,
   OperatingMode,
+  OptimalityGapRow,
   ScenarioResult,
   StaticVerificationData,
   TransitionRecord,
@@ -13,6 +14,7 @@ const EMPTY_DATA: StaticVerificationData = {
   scenarios: {},
   monteCarlo: [],
   costGap: [],
+  optimalityGap: [],
   transitions: [],
 }
 
@@ -21,10 +23,11 @@ export function useVerificationData() {
   const ready = ref(false)
 
   async function load() {
-    const [scenarios, monteCarlo, costGap, demoLog] = await Promise.all([
+    const [scenarios, monteCarlo, costGap, optimalityGap, demoLog] = await Promise.all([
       fetchJson<Record<string, ScenarioResult>>('/data/scenario_results.json', {}),
       fetchCsv<MonteCarloRow>('/data/monte_carlo_summary.csv'),
       fetchCsv<CostGapRow>('/data/cost_gap_analysis.csv'),
+      fetchCsv<OptimalityGapRow>('/data/optimality_gap_trace.csv'),
       fetchText('/data/demo_run_log.txt'),
     ])
 
@@ -32,6 +35,7 @@ export function useVerificationData() {
       scenarios,
       monteCarlo,
       costGap,
+      optimalityGap,
       transitions: parseTransitions(demoLog),
     }
     ready.value = true
@@ -122,6 +126,9 @@ function parseRawTransitionLines(text: string): TransitionRecord[] {
         return null
       }
       const [, elapsed, from, to, delay, loss, reason] = match
+      const beforeRaw = line.match(/before=\[([^\]]*)\]/)?.[1]
+      const afterRaw = line.match(/after=\[([^\]]*)\]/)?.[1]
+
       return {
         elapsed_s: Number(elapsed),
         from: modeMap[from],
@@ -129,9 +136,21 @@ function parseRawTransitionLines(text: string): TransitionRecord[] {
         delay_ms: Number(delay),
         loss_rate: Number(loss),
         reason: reasonLabel(reason),
+        before_mw: parseVector(beforeRaw),
+        after_mw: parseVector(afterRaw),
       }
     })
     .filter(isTransitionRecord)
+}
+
+function parseVector(raw?: string) {
+  if (!raw) {
+    return undefined
+  }
+  return raw
+    .split(',')
+    .map((value) => Number(value.trim()))
+    .filter((value) => Number.isFinite(value))
 }
 
 function isTransitionRecord(item: TransitionRecord | null): item is TransitionRecord {
@@ -151,7 +170,7 @@ function inferReason(from: OperatingMode, to: OperatingMode) {
   if (from === 'local_cluster' && to === 'global_cooperative') {
     return '质量恢复，回到全局'
   }
-  return '状态机滞回切换'
+  return '状态滞回切换'
 }
 
 function reasonLabel(reason: string) {

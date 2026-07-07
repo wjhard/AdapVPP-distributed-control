@@ -8,6 +8,11 @@ const props = defineProps<{
   snapshot: TelemetrySnapshot
 }>()
 
+const emit = defineEmits<{
+  nodeSelected: [nodeId: number]
+  linkSelected: [linkKey: string]
+}>()
+
 const iconByKind = {
   pv: Sun,
   wind: Wind,
@@ -129,6 +134,14 @@ function linkColor(delayMs: number, lossRate: number) {
       </defs>
       <g v-for="line in lines" :key="line.key">
         <line
+          class="topology-line-hit"
+          :x1="line.start.x"
+          :y1="line.start.y"
+          :x2="line.end.x"
+          :y2="line.end.y"
+          @click="emit('linkSelected', line.key)"
+        />
+        <line
           class="topology-line"
           :class="{ 'topology-line--flow': line.visible }"
           :x1="line.start.x"
@@ -138,6 +151,7 @@ function linkColor(delayMs: number, lossRate: number) {
           :stroke="line.color"
           :stroke-opacity="line.opacity"
           filter="url(#line-glow)"
+          @click="emit('linkSelected', line.key)"
         />
       </g>
     </svg>
@@ -148,6 +162,10 @@ function linkColor(delayMs: number, lossRate: number) {
       class="vpp-node"
       :class="[`vpp-node--${node.kind}`, { 'vpp-node--isolated': snapshot.mode === 'autonomous' }]"
       :style="{ left: `${node.x}px`, top: `${node.y}px`, '--node-color': NODE_COLORS[node.kind] }"
+      role="button"
+      tabindex="0"
+      @click="emit('nodeSelected', node.id)"
+      @keydown.enter.prevent="emit('nodeSelected', node.id)"
     >
       <div class="vpp-node__icon" :title="node.kind">
         <component :is="iconByKind[node.kind]" :size="30" />
