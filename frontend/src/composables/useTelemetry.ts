@@ -184,6 +184,7 @@ function normalizeSnapshot(raw: Partial<TelemetrySnapshot>): TelemetrySnapshot {
     mode_label: raw.mode_label ?? MODE_LABELS[mode],
     average_delay_ms: Number(raw.average_delay_ms ?? 45),
     max_loss_rate: Number(raw.max_loss_rate ?? 0.02),
+    real_network_measurement: Boolean(raw.real_network_measurement ?? false),
     links: normalizeLinks(raw.links),
     clusters: raw.clusters ?? [[1, 2, 3, 4, 5]],
     target_mw: toFive(raw.target_mw),
@@ -198,10 +199,23 @@ function normalizeLinks(raw?: LinkMap): LinkMap {
   const links: LinkMap = {}
   LINK_KEYS.forEach((key, index) => {
     const baseDelay = 42 + index * 4
-    links[key] = raw?.[key] ?? {
-      delay_ms: baseDelay,
-      loss_rate: 0.012 + index * 0.002,
-      available: true,
+    const item = raw?.[key]
+    links[key] = {
+      delay_ms: Number(item?.delay_ms ?? baseDelay),
+      loss_rate: Number(item?.loss_rate ?? 0.012 + index * 0.002),
+      available: Boolean(item?.available ?? true),
+      configured_delay_ms:
+        item?.configured_delay_ms === null || item?.configured_delay_ms === undefined
+          ? null
+          : Number(item.configured_delay_ms),
+      configured_loss_rate:
+        item?.configured_loss_rate === null || item?.configured_loss_rate === undefined
+          ? null
+          : Number(item.configured_loss_rate),
+      measured_rtt_ms:
+        item?.measured_rtt_ms === null || item?.measured_rtt_ms === undefined
+          ? null
+          : Number(item.measured_rtt_ms),
     }
   })
   return links
@@ -244,6 +258,7 @@ function makeSyntheticSnapshot(elapsed: number): TelemetrySnapshot {
     mode_label: MODE_LABELS[mode],
     average_delay_ms: delay,
     max_loss_rate: loss,
+    real_network_measurement: false,
     links,
     clusters: mode === 'autonomous' ? [[1], [2], [3], [4], [5]] : [[1, 2, 3, 4, 5]],
     target_mw: [solar, solar * 0.78, wind, wind * 0.82, bess],

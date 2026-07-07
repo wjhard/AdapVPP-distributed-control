@@ -108,16 +108,38 @@ class RollingProbeStats:
         elapsed_s: float,
         availability_loss_threshold: float,
         availability_delay_threshold_ms: float,
+        configured_delay_ms: float,
+        configured_loss_rate: float,
     ) -> LinkMetric:
         if not self._items:
-            return LinkMetric(src, dst, 0.0, 0.0, True)
+            return LinkMetric(
+                src,
+                dst,
+                0.0,
+                0.0,
+                True,
+                configured_delay_ms=configured_delay_ms,
+                configured_loss_rate=configured_loss_rate,
+                measured_rtt_ms=None,
+            )
 
         denominator = max(len(self._items), self.loss_denominator_floor)
         loss_rate = sum(1 for item in self._items if not item.ok) / denominator
         successful = [item.rtt_ms for item in self._items if item.ok]
         delay_ms = mean(successful) if successful else max(item.rtt_ms for item in self._items)
+        latest_success = next((item.rtt_ms for item in reversed(self._items) if item.ok), None)
+        measured_rtt_ms = latest_success if latest_success is not None else delay_ms
         available = loss_rate < availability_loss_threshold and delay_ms < availability_delay_threshold_ms
-        return LinkMetric(src, dst, delay_ms, loss_rate, available)
+        return LinkMetric(
+            src,
+            dst,
+            delay_ms,
+            loss_rate,
+            available,
+            configured_delay_ms=configured_delay_ms,
+            configured_loss_rate=configured_loss_rate,
+            measured_rtt_ms=measured_rtt_ms,
+        )
 
 
 class ToxiproxyMeasuredNetwork:
@@ -198,17 +220,20 @@ class ToxiproxyMeasuredNetwork:
 
         metrics: Dict[str, LinkMetric] = {}
         for endpoint in self.endpoints:
+            desired_metric = desired.links[endpoint.key]
             metrics[endpoint.key] = self.stats[endpoint.key].metric(
                 endpoint.src,
                 endpoint.dst,
                 elapsed_s,
                 self.availability_loss_threshold,
                 self.availability_delay_threshold_ms,
+                desired_metric.delay_ms,
+                desired_metric.loss_rate,
             )
 
         average_delay = sum(item.delay_ms for item in metrics.values()) / max(len(metrics), 1)
         max_loss = max((item.loss_rate for item in metrics.values()), default=0.0)
-        return QualitySnapshot(elapsed_s, metrics, average_delay, max_loss)
+        return QualitySnapshot(elapsed_s, metrics, average_delay, max_loss, real_network_measurement=True)
 
     def diagnostic_lines(self) -> List[str]:
         lines = [

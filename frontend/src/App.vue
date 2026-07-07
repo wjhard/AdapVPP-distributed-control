@@ -84,6 +84,7 @@ onUnmounted(() => {
           :backend="telemetry.current.value.backend"
           :loss-rate="telemetry.current.value.max_loss_rate"
           :mode="telemetry.current.value.mode"
+          :real-network-measurement="telemetry.current.value.real_network_measurement"
           :source="telemetry.sourceLabel.value"
           :status="telemetry.status.value"
           :total-power="telemetry.totalCommand.value"

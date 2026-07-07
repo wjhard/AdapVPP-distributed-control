@@ -14,7 +14,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--host", default="127.0.0.1", help="WebSocket host.")
     parser.add_argument("--port", type=int, default=8765, help="WebSocket port.")
     parser.add_argument("--fast", action="store_true", help="Run simulated time without real-time sleeping.")
-    parser.add_argument("--toxiproxy", action="store_true", help="Use real Toxiproxy TCP probes instead of formula-only link telemetry.")
+    parser.add_argument(
+        "--formula",
+        action="store_true",
+        help="Use the formula-only Gilbert-Elliott telemetry source instead of real Toxiproxy TCP probes.",
+    )
+    parser.add_argument(
+        "--toxiproxy",
+        action="store_true",
+        help="Deprecated compatibility flag. Real Toxiproxy TCP probes are now the default.",
+    )
     parser.add_argument("--toxiproxy-api-port", type=int, default=8474, help="Toxiproxy management API port.")
     parser.add_argument("--force-bad-link", default=None, help="Optional link key such as 1-2 to force into Bad state.")
     parser.add_argument("--force-bad-at", type=float, default=35.0, help="Elapsed seconds when manual Bad link injection starts.")
@@ -32,7 +41,7 @@ async def main() -> None:
         websocket_host=args.host,
         websocket_port=args.port,
         realtime=not args.fast,
-        use_toxiproxy=args.toxiproxy,
+        use_toxiproxy=not args.formula,
         toxiproxy_api_port=args.toxiproxy_api_port,
         force_bad_link=args.force_bad_link,
         force_bad_start_s=args.force_bad_at,

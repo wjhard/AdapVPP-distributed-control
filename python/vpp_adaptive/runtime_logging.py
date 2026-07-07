@@ -54,6 +54,7 @@ class RunLogger:
             "mode_label": MODE_LABELS[decision.mode],
             "average_delay_ms": round(quality.average_delay_ms, 3),
             "max_loss_rate": round(quality.max_loss_rate, 5),
+            "real_network_measurement": quality.real_network_measurement,
             "links": quality.compact_links(),
             "clusters": dispatch.clusters,
             "target_mw": self._round_list(dispatch.target_mw),

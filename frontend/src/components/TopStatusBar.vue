@@ -9,12 +9,18 @@ const props = defineProps<{
   backend: string
   lossRate: number
   mode: OperatingMode
+  realNetworkMeasurement: boolean
   source: string
   status: ConnectionStatus
   totalPower: number
 }>()
 
-const statusText = computed(() => (props.status === 'live' ? 'LIVE' : 'DEMO'))
+const statusText = computed(() => {
+  if (props.status !== 'live') {
+    return 'DEMO'
+  }
+  return props.realNetworkMeasurement ? 'LIVE·真实网络' : 'LIVE·仿真'
+})
 const modeColor = computed(() => MODE_COLORS[props.mode])
 </script>
 
@@ -54,7 +60,13 @@ const modeColor = computed(() => MODE_COLORS[props.mode])
         <strong>{{ totalPower.toFixed(1) }}</strong>
         <em>MW</em>
       </div>
-      <div class="status-chip" :class="{ 'status-chip--live': status === 'live' }">
+      <div
+        class="status-chip"
+        :class="{
+          'status-chip--live': status === 'live',
+          'status-chip--real': status === 'live' && realNetworkMeasurement,
+        }"
+      >
         {{ statusText }}
       </div>
     </div>

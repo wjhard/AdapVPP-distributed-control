@@ -25,6 +25,9 @@ class LinkMetric:
     delay_ms: float
     loss_rate: float
     available: bool
+    configured_delay_ms: float | None = None
+    configured_loss_rate: float | None = None
+    measured_rtt_ms: float | None = None
 
     @property
     def key(self) -> str:
@@ -37,6 +40,7 @@ class QualitySnapshot:
     links: Dict[str, LinkMetric]
     average_delay_ms: float
     max_loss_rate: float
+    real_network_measurement: bool = False
 
     def compact_links(self) -> Dict[str, dict]:
         return {
@@ -44,6 +48,21 @@ class QualitySnapshot:
                 "delay_ms": round(metric.delay_ms, 3),
                 "loss_rate": round(metric.loss_rate, 5),
                 "available": metric.available,
+                "configured_delay_ms": (
+                    round(metric.configured_delay_ms, 3)
+                    if metric.configured_delay_ms is not None
+                    else None
+                ),
+                "configured_loss_rate": (
+                    round(metric.configured_loss_rate, 5)
+                    if metric.configured_loss_rate is not None
+                    else None
+                ),
+                "measured_rtt_ms": (
+                    round(metric.measured_rtt_ms, 3)
+                    if metric.measured_rtt_ms is not None
+                    else None
+                ),
             }
             for key, metric in self.links.items()
         }

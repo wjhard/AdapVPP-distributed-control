@@ -41,6 +41,7 @@ const lines = computed(() =>
       visible: lineVisible(props.snapshot.mode, sameCluster, link?.available ?? false),
       color: linkColor(link?.delay_ms ?? 0, link?.loss_rate ?? 0),
       opacity: lineOpacity(props.snapshot.mode, sameCluster, link?.available ?? false),
+      tooltip: linkTooltip(key, link),
     }
   }),
 )
@@ -104,6 +105,21 @@ function linkColor(delayMs: number, lossRate: number) {
   }
   return '#29e6bb'
 }
+
+function linkTooltip(key: string, link: TelemetrySnapshot['links'][string] | undefined) {
+  const configuredDelay = link?.configured_delay_ms ?? link?.delay_ms ?? 0
+  const measuredRtt = link?.measured_rtt_ms ?? link?.delay_ms ?? 0
+  const configuredLoss = link?.configured_loss_rate ?? link?.loss_rate ?? 0
+  const measuredLoss = link?.loss_rate ?? 0
+  const source = props.snapshot.real_network_measurement ? '真实Toxiproxy网络测量' : '公式仿真数据'
+  return [
+    `${key} ${source}`,
+    `configured_delay: ${configuredDelay.toFixed(1)} ms`,
+    `measured_rtt: ${measuredRtt.toFixed(1)} ms`,
+    `configured_loss: ${(configuredLoss * 100).toFixed(1)}%`,
+    `measured_loss: ${(measuredLoss * 100).toFixed(1)}%`,
+  ].join('\n')
+}
 </script>
 
 <template>
@@ -133,6 +149,7 @@ function linkColor(delayMs: number, lossRate: number) {
         </filter>
       </defs>
       <g v-for="line in lines" :key="line.key">
+        <title>{{ line.tooltip }}</title>
         <line
           class="topology-line-hit"
           :x1="line.start.x"

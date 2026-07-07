@@ -4,6 +4,9 @@ export type LinkMetric = {
   delay_ms: number
   loss_rate: number
   available: boolean
+  configured_delay_ms?: number | null
+  configured_loss_rate?: number | null
+  measured_rtt_ms?: number | null
 }
 
 export type LinkMap = Record<string, LinkMetric>
@@ -22,6 +25,7 @@ export type TelemetryPayload = {
   mode_label: string
   average_delay_ms: number
   max_loss_rate: number
+  real_network_measurement?: boolean
   links: LinkMap
   clusters: number[][]
   dispatch: DispatchPayload
@@ -33,6 +37,7 @@ export type TelemetrySnapshot = {
   mode_label: string
   average_delay_ms: number
   max_loss_rate: number
+  real_network_measurement: boolean
   links: LinkMap
   clusters: number[][]
   target_mw: number[]
