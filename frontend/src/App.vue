@@ -5,6 +5,7 @@ import CommunicationQualityChart from './components/CommunicationQualityChart.vu
 import DashboardPanel from './components/DashboardPanel.vue'
 import DrilldownPanel from './components/DrilldownPanel.vue'
 import EfficiencyGauge from './components/EfficiencyGauge.vue'
+import ForecastAccuracyPanel from './components/ForecastAccuracyPanel.vue'
 import PowerTrendChart from './components/PowerTrendChart.vue'
 import TimelinePanel from './components/TimelinePanel.vue'
 import TopStatusBar from './components/TopStatusBar.vue'
@@ -147,6 +148,13 @@ onUnmounted(() => {
             :live-delta="telemetry.current.value.max_delta_mw"
             :saving-rate="robustCommSaving"
           />
+        </DashboardPanel>
+
+        <DashboardPanel class="panel-forecast" title="预测 vs 实际" accent="#38f3ff">
+          <template #meta>
+            <span class="evidence-tag evidence-tag--live">前瞻调度输入</span>
+          </template>
+          <ForecastAccuracyPanel :history="telemetry.history.value" />
         </DashboardPanel>
 
         <DashboardPanel class="panel-algo" title="算法效果对比看板" accent="#ff8e8e">

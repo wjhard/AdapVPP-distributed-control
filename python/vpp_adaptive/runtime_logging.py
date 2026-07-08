@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
-from .models import DispatchResult, MODE_LABELS, QualitySnapshot, StateDecision
+from .models import DispatchResult, ForecastSnapshot, MODE_LABELS, QualitySnapshot, StateDecision
 
 
 class RunLogger:
@@ -47,7 +47,13 @@ class RunLogger:
             f"after={self._round_list(dispatch.command_mw)}"
         )
 
-    def snapshot(self, quality: QualitySnapshot, decision: StateDecision, dispatch: DispatchResult) -> None:
+    def snapshot(
+        self,
+        quality: QualitySnapshot,
+        decision: StateDecision,
+        dispatch: DispatchResult,
+        forecast: ForecastSnapshot | None = None,
+    ) -> None:
         payload: Dict[str, Any] = {
             "elapsed_s": round(quality.elapsed_s, 3),
             "mode": decision.mode.value,
@@ -63,6 +69,26 @@ class RunLogger:
             "backend": dispatch.backend,
             "note": dispatch.note,
         }
+        if forecast is not None:
+            payload["forecast"] = {
+                "method": forecast.method,
+                "horizon_minutes": round(forecast.horizon_minutes, 3),
+                "horizon_steps": forecast.horizon_steps,
+                "dispatch_uses_forecast": forecast.dispatch_uses_forecast,
+                "actual_mw": self._round_list(forecast.actual_mw),
+                "forecast_mw": self._round_list(forecast.forecast_mw),
+                "verified_forecast_mw": (
+                    self._round_list(forecast.verified_forecast_mw)
+                    if forecast.verified_forecast_mw is not None
+                    else None
+                ),
+                "rmse_mw": round(forecast.rmse_mw, 5),
+                "mape_percent": round(forecast.mape_percent, 5),
+                "per_node_rmse_mw": self._round_list(forecast.per_node_rmse_mw),
+                "per_node_mape_percent": self._round_list(forecast.per_node_mape_percent),
+                "sample_count": forecast.sample_count,
+                "history_path": forecast.history_path,
+            }
         with self.jsonl_path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
 

@@ -86,6 +86,23 @@ class ResourceSnapshot:
 
 
 @dataclass(frozen=True)
+class ForecastSnapshot:
+    method: str
+    horizon_minutes: float
+    horizon_steps: int
+    actual_mw: Tuple[float, float, float, float]
+    forecast_mw: Tuple[float, float, float, float]
+    verified_forecast_mw: Tuple[float, float, float, float] | None
+    rmse_mw: float
+    mape_percent: float
+    per_node_rmse_mw: Tuple[float, float, float, float]
+    per_node_mape_percent: Tuple[float, float, float, float]
+    sample_count: int
+    history_path: str
+    dispatch_uses_forecast: bool = True
+
+
+@dataclass(frozen=True)
 class DispatchResult:
     mode: OperatingMode
     target_mw: List[float]

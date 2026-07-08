@@ -7,9 +7,10 @@ from typing import Dict, List
 
 from .clustering import ConnectivityClusterer
 from .dispatch import AdaptiveDispatcher
+from .forecasting import ShortTermRenewableForecaster
 from .link_quality import LinkQualitySimulator
 from .matlab_backend import MatlabDispatchBackend
-from .models import DispatchResult, MODE_LABELS, OperatingMode, QualitySnapshot, StateDecision
+from .models import DispatchResult, ForecastSnapshot, MODE_LABELS, OperatingMode, QualitySnapshot, StateDecision
 from .resource_profile import ResourceProfile
 from .runtime_logging import RunLogger
 from .state_machine import AdaptiveStateMachine
@@ -53,6 +54,7 @@ class AdaptiveVppDemo:
         self.state_machine = AdaptiveStateMachine(min_dwell_s=3.0)
         self.clusterer = ConnectivityClusterer()
         self.resources = ResourceProfile(project_root)
+        self.forecaster = ShortTermRenewableForecaster(project_root)
         self.backend = MatlabDispatchBackend(project_root)
         self.dispatcher = AdaptiveDispatcher(self.backend)
         self.websocket = TelemetryWebSocketServer(websocket_host, websocket_port)
@@ -79,13 +81,23 @@ class AdaptiveVppDemo:
                         self.visited_modes.append(decision.mode)
 
                     clusters = self._clusters_for_mode(decision.mode, quality)
-                    resource = self.resources.sample(elapsed_s, self.duration_s)
-                    dispatch = self.dispatcher.dispatch(decision.mode, quality, clusters, resource, self.interval_s)
+                    actual_resource = self.resources.sample(elapsed_s, self.duration_s)
+                    forecast = self.forecaster.update(elapsed_s, actual_resource)
+                    dispatch_resource = self.forecaster.forecast_resource(actual_resource, forecast)
+                    forecast_pmax = self.forecaster.forecast_pmax(forecast)
+                    dispatch = self.dispatcher.dispatch(
+                        decision.mode,
+                        quality,
+                        clusters,
+                        dispatch_resource,
+                        self.interval_s,
+                        renewable_pmax=forecast_pmax,
+                    )
 
                     if decision.changed:
                         self.run_logger.transition(decision, quality, dispatch)
-                    self.run_logger.snapshot(quality, decision, dispatch)
-                    await self.websocket.broadcast(self._payload(quality, decision, dispatch))
+                    self.run_logger.snapshot(quality, decision, dispatch, forecast)
+                    await self.websocket.broadcast(self._payload(quality, decision, dispatch, forecast))
 
                     if self.realtime and step < total_steps - 1:
                         await asyncio.sleep(self.interval_s)
@@ -139,7 +151,12 @@ class AdaptiveVppDemo:
         return self.clusterer.connected_components(quality)
 
     @staticmethod
-    def _payload(quality: QualitySnapshot, decision: StateDecision, dispatch: DispatchResult) -> Dict[str, object]:
+    def _payload(
+        quality: QualitySnapshot,
+        decision: StateDecision,
+        dispatch: DispatchResult,
+        forecast: ForecastSnapshot,
+    ) -> Dict[str, object]:
         return {
             "elapsed_s": round(quality.elapsed_s, 3),
             "mode": decision.mode.value,
@@ -149,6 +166,25 @@ class AdaptiveVppDemo:
             "real_network_measurement": quality.real_network_measurement,
             "links": quality.compact_links(),
             "clusters": dispatch.clusters,
+            "forecast": {
+                "method": forecast.method,
+                "horizon_minutes": round(forecast.horizon_minutes, 3),
+                "horizon_steps": forecast.horizon_steps,
+                "dispatch_uses_forecast": forecast.dispatch_uses_forecast,
+                "actual_mw": [round(x, 3) for x in forecast.actual_mw],
+                "forecast_mw": [round(x, 3) for x in forecast.forecast_mw],
+                "verified_forecast_mw": (
+                    [round(x, 3) for x in forecast.verified_forecast_mw]
+                    if forecast.verified_forecast_mw is not None
+                    else None
+                ),
+                "rmse_mw": round(forecast.rmse_mw, 5),
+                "mape_percent": round(forecast.mape_percent, 5),
+                "per_node_rmse_mw": [round(x, 5) for x in forecast.per_node_rmse_mw],
+                "per_node_mape_percent": [round(x, 5) for x in forecast.per_node_mape_percent],
+                "sample_count": forecast.sample_count,
+                "history_path": forecast.history_path,
+            },
             "dispatch": {
                 "target_mw": [round(x, 3) for x in dispatch.target_mw],
                 "command_mw": [round(x, 3) for x in dispatch.command_mw],

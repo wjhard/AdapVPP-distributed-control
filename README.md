@@ -14,6 +14,16 @@ python run_adaptive_demo.py --duration 120 --interval 1 --host 127.0.0.1 --port 
 
 前端联动演示时不要加 `--fast`，否则 120 秒演示会快速跑完。
 
+## 短期发电量预测
+
+Python 后端在每个调度步都会先对 PV1/PV2/Wind3/Wind4 生成短期预测值，再把预测可用出力作为调度参考，而不是直接把已揭晓的真实出力送入调度器。当前预测模块采用持续性预测加近期线性趋势外推，并叠加带时间相关性的 AR(1) 预测误差：光伏误差约按 8%-15% 模拟，风电误差约按 10%-20% 模拟，预测提前量越长误差越大。
+
+WebSocket 遥测中的 `forecast` 字段同时包含当前真实出力、预测出力、到期预测误差、RMSE 和 MAPE。预测准确度历史会保存到：
+
+```text
+logs/forecast_accuracy/renewable_forecast_accuracy_*.csv
+```
+
 ## 通信信道模型
 
 `python/vpp_adaptive/link_quality.py` 采用 Gilbert-Elliott 两状态马尔可夫信道模型生成链路质量。该模型把每条通信链路描述为 Good/Bad 两个状态：

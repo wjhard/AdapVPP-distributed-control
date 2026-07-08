@@ -30,7 +30,9 @@ class MatlabDispatchBackend:
         demand_mw: float,
         delay_steps: int,
         loss_rate: float,
+        p_max: Sequence[float] | None = None,
     ) -> Tuple[List[float], str]:
+        dynamic_p_max = list(p_max) if p_max is not None else self.p_max
         if self.available:
             try:
                 p_opt, *_ = self._engine.et_admm_robust(
@@ -42,12 +44,18 @@ class MatlabDispatchBackend:
                     float("inf"),
                     nargout=6,
                 )
-                return [float(row[0]) for row in p_opt], self.label
+                target = min(max(float(demand_mw), sum(self.p_min)), sum(dynamic_p_max))
+                return self._rebalance(
+                    [float(row[0]) for row in p_opt],
+                    target,
+                    self.p_min,
+                    dynamic_p_max,
+                ), self.label
             except Exception as exc:  # pragma: no cover - depends on local MATLAB engine.
                 self.available = False
                 self.degraded_reason = f"MATLAB call failed: {exc}"
 
-        return self.local_economic_dispatch(demand_mw), self.label
+        return self.local_economic_dispatch(demand_mw, dynamic_p_max), self.label
 
     def local_economic_dispatch(self, demand_mw: float, p_max: Sequence[float] | None = None) -> List[float]:
         p_min = self.p_min

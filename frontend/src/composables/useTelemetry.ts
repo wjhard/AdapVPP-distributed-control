@@ -4,6 +4,7 @@ import type {
   ConnectionStatus,
   LinkMap,
   OperatingMode,
+  ForecastPayload,
   TelemetryPayload,
   TelemetrySnapshot,
   TransitionRecord,
@@ -187,6 +188,7 @@ function normalizeSnapshot(raw: Partial<TelemetrySnapshot>): TelemetrySnapshot {
     real_network_measurement: Boolean(raw.real_network_measurement ?? false),
     links: normalizeLinks(raw.links),
     clusters: raw.clusters ?? [[1, 2, 3, 4, 5]],
+    forecast: normalizeForecast(raw.forecast, raw),
     target_mw: toFive(raw.target_mw),
     command_mw: toFive(raw.command_mw),
     max_delta_mw: Number(raw.max_delta_mw ?? 0),
@@ -221,9 +223,57 @@ function normalizeLinks(raw?: LinkMap): LinkMap {
   return links
 }
 
+function normalizeForecast(
+  raw?: Partial<ForecastPayload>,
+  source?: Partial<TelemetrySnapshot>,
+): ForecastPayload {
+  if (!raw) {
+    const elapsed = Number(source?.elapsed_s ?? 0)
+    const actual = toFour(source?.target_mw ?? source?.command_mw)
+    const forecast = actual.map((value, index) =>
+      Math.max(0, value + Math.sin(elapsed / 8 + index) * (index < 2 ? 1.2 : 2.4)),
+    )
+    return {
+      method: 'persistence_trend_ar1_error',
+      horizon_minutes: 15,
+      horizon_steps: 1,
+      dispatch_uses_forecast: true,
+      actual_mw: actual,
+      forecast_mw: forecast,
+      verified_forecast_mw: forecast,
+      rmse_mw: 2.4,
+      mape_percent: 12.6,
+      per_node_rmse_mw: [1.2, 1.0, 2.9, 2.5],
+      per_node_mape_percent: [10.4, 11.2, 14.3, 13.8],
+      sample_count: Math.max(0, Math.floor(elapsed)) * 4,
+      history_path: 'logs/forecast_accuracy/renewable_forecast_accuracy_demo.csv',
+    }
+  }
+  return {
+    method: raw?.method ?? 'persistence_trend_ar1_error',
+    horizon_minutes: Number(raw?.horizon_minutes ?? 15),
+    horizon_steps: Number(raw?.horizon_steps ?? 5),
+    dispatch_uses_forecast: Boolean(raw?.dispatch_uses_forecast ?? true),
+    actual_mw: toFour(raw?.actual_mw),
+    forecast_mw: toFour(raw?.forecast_mw),
+    verified_forecast_mw: raw?.verified_forecast_mw ? toFour(raw.verified_forecast_mw) : null,
+    rmse_mw: Number(raw?.rmse_mw ?? 0),
+    mape_percent: Number(raw?.mape_percent ?? 0),
+    per_node_rmse_mw: toFour(raw?.per_node_rmse_mw),
+    per_node_mape_percent: toFour(raw?.per_node_mape_percent),
+    sample_count: Number(raw?.sample_count ?? 0),
+    history_path: raw?.history_path ?? '',
+  }
+}
+
 function toFive(values?: number[]) {
   const safeValues = Array.isArray(values) ? values : []
   return Array.from({ length: 5 }, (_, index) => Number(safeValues[index] ?? 0))
+}
+
+function toFour(values?: number[] | null) {
+  const safeValues = Array.isArray(values) ? values : []
+  return Array.from({ length: 4 }, (_, index) => Number(safeValues[index] ?? 0))
 }
 
 function buildSyntheticFrames() {
@@ -251,6 +301,10 @@ function makeSyntheticSnapshot(elapsed: number): TelemetrySnapshot {
   const solar = Math.max(0, Math.sin((elapsed / 120) * Math.PI) * 16)
   const wind = 13 + Math.sin(elapsed / 9) * 5 + severity * 3
   const bess = mode === 'autonomous' ? Math.max(0, 10 - (elapsed - 53) * 0.24) : 3 - severity * 5
+  const actualRenewable = [solar, solar * 0.78, wind, wind * 0.82]
+  const forecastRenewable = actualRenewable.map((value, index) =>
+    Math.max(0, value + Math.sin(elapsed / 9 + index) * (index < 2 ? 1.4 : 2.2)),
+  )
 
   return {
     elapsed_s: elapsed,
@@ -261,6 +315,21 @@ function makeSyntheticSnapshot(elapsed: number): TelemetrySnapshot {
     real_network_measurement: false,
     links,
     clusters: mode === 'autonomous' ? [[1], [2], [3], [4], [5]] : [[1, 2, 3, 4, 5]],
+    forecast: {
+      method: 'persistence_trend_ar1_error',
+      horizon_minutes: 15,
+      horizon_steps: 5,
+      dispatch_uses_forecast: true,
+      actual_mw: actualRenewable,
+      forecast_mw: forecastRenewable,
+      verified_forecast_mw: forecastRenewable,
+      rmse_mw: 2.4,
+      mape_percent: 11.8,
+      per_node_rmse_mw: [1.5, 1.2, 2.9, 2.6],
+      per_node_mape_percent: [10.2, 11.1, 13.4, 12.6],
+      sample_count: Math.max(0, elapsed - 5) * 4,
+      history_path: 'logs/forecast_accuracy/renewable_forecast_accuracy.csv',
+    },
     target_mw: [solar, solar * 0.78, wind, wind * 0.82, bess],
     command_mw: [solar, solar * 0.78, wind, wind * 0.82, bess],
     max_delta_mw: 2.5,

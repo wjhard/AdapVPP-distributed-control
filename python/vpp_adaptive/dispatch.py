@@ -24,10 +24,11 @@ class AdaptiveDispatcher:
         clusters: List[List[int]],
         resource: ResourceSnapshot,
         interval_s: float,
+        renewable_pmax: Sequence[float] | None = None,
     ) -> DispatchResult:
         previous = list(self.previous_command)
         if mode == OperatingMode.GLOBAL:
-            target, backend, note = self._global_dispatch(quality, resource)
+            target, backend, note = self._global_dispatch(quality, resource, renewable_pmax)
         elif mode == OperatingMode.CLUSTER:
             target, backend, note = self._cluster_dispatch(clusters, resource)
         else:
@@ -38,10 +39,20 @@ class AdaptiveDispatcher:
         max_delta = max(abs(a - b) for a, b in zip(command, previous))
         return DispatchResult(mode, target, command, previous, max_delta, clusters, backend, note)
 
-    def _global_dispatch(self, quality: QualitySnapshot, resource: ResourceSnapshot) -> tuple[List[float], str, str]:
+    def _global_dispatch(
+        self,
+        quality: QualitySnapshot,
+        resource: ResourceSnapshot,
+        renewable_pmax: Sequence[float] | None,
+    ) -> tuple[List[float], str, str]:
         delay_steps = max(0, min(5, int(round(quality.average_delay_ms / 100.0))))
-        target, backend = self.backend.dispatch(resource.load_mw, delay_steps, quality.max_loss_rate)
-        return target, backend, f"global demand={resource.load_mw:.2f}MW delay_steps={delay_steps}"
+        p_max = list(renewable_pmax) if renewable_pmax is not None else ResourceProfile.availability_vector(resource)
+        target, backend = self.backend.dispatch(resource.load_mw, delay_steps, quality.max_loss_rate, p_max=p_max)
+        return (
+            target,
+            backend,
+            f"global demand={resource.load_mw:.2f}MW delay_steps={delay_steps} dispatch_basis=forecast",
+        )
 
     def _cluster_dispatch(self, clusters: List[List[int]], resource: ResourceSnapshot) -> tuple[List[float], str, str]:
         target = [0.0] * 5
@@ -57,14 +68,18 @@ class AdaptiveDispatcher:
                 target[idx] = min(max(equal_share, self.installed_pmin[idx]), self.installed_pmax[idx])
             self._rebalance_group(target, group, group_demand)
 
-        return target, "local proportional cluster dispatch", f"clusters={clusters}"
+        return target, "local proportional cluster dispatch", f"clusters={clusters} dispatch_basis=forecast"
 
     def _autonomous_dispatch(self, resource: ResourceSnapshot) -> tuple[List[float], str, str]:
         availability = ResourceProfile.availability_vector(resource)
         bess_previous = self.previous_command[4]
         bess_safe = max(min(bess_previous * 0.90, 5.0), -5.0)
         target = [availability[0], availability[1], availability[2], availability[3], bess_safe]
-        return target, "autonomous fallback policy", "renewables follow resource, BESS drifts toward safe band"
+        return (
+            target,
+            "autonomous fallback policy",
+            "renewables follow forecast resource, BESS drifts toward safe band",
+        )
 
     def _smooth(self, previous: Sequence[float], target: Sequence[float], interval_s: float) -> List[float]:
         max_step = self.ramp_rate_mw_per_s * max(interval_s, 1e-6)

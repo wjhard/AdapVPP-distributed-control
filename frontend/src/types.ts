@@ -19,6 +19,22 @@ export type DispatchPayload = {
   note: string
 }
 
+export type ForecastPayload = {
+  method: string
+  horizon_minutes: number
+  horizon_steps: number
+  dispatch_uses_forecast: boolean
+  actual_mw: number[]
+  forecast_mw: number[]
+  verified_forecast_mw?: number[] | null
+  rmse_mw: number
+  mape_percent: number
+  per_node_rmse_mw: number[]
+  per_node_mape_percent: number[]
+  sample_count: number
+  history_path: string
+}
+
 export type TelemetryPayload = {
   elapsed_s: number
   mode: OperatingMode
@@ -28,6 +44,7 @@ export type TelemetryPayload = {
   real_network_measurement?: boolean
   links: LinkMap
   clusters: number[][]
+  forecast?: ForecastPayload
   dispatch: DispatchPayload
 }
 
@@ -40,6 +57,7 @@ export type TelemetrySnapshot = {
   real_network_measurement: boolean
   links: LinkMap
   clusters: number[][]
+  forecast: ForecastPayload
   target_mw: number[]
   command_mw: number[]
   max_delta_mw: number
