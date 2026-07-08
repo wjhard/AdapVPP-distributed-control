@@ -54,6 +54,7 @@ class RunLogger:
         decision: StateDecision,
         dispatch: DispatchResult,
         forecast: ForecastSnapshot | None = None,
+        security: Dict[str, Any] | None = None,
     ) -> None:
         payload: Dict[str, Any] = {
             "elapsed_s": round(quality.elapsed_s, 3),
@@ -73,6 +74,8 @@ class RunLogger:
             "controller_trace": [asdict(item) for item in dispatch.controller_trace],
             "dispatch_sources": [asdict(item) for item in dispatch.dispatch_sources],
         }
+        if security is not None:
+            payload["security"] = security
         if forecast is not None:
             payload["forecast"] = {
                 "method": forecast.method,

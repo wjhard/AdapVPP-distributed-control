@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -12,6 +13,7 @@ from typing import Callable, Deque, Dict, Iterable, List, Tuple
 
 from .link_quality import LinkQualitySimulator
 from .models import LinkMetric, QualitySnapshot
+from .security import NODE_CAPACITY_MW, ZeroTrustSecurityManager
 from .toxiproxy_control import (
     ALL_LINKS,
     NODE_IDS,
@@ -40,11 +42,19 @@ class ProbeOutcome:
 class VppNodeServer:
     """One virtual power-plant node exposed as a real TCP socket endpoint."""
 
-    def __init__(self, node_id: int, host: str, port: int, log: LogCallback | None = None) -> None:
+    def __init__(
+        self,
+        node_id: int,
+        host: str,
+        port: int,
+        log: LogCallback | None = None,
+        security: ZeroTrustSecurityManager | None = None,
+    ) -> None:
         self.node_id = node_id
         self.host = host
         self.port = port
         self.log = log
+        self.security = security
         self.server: asyncio.AbstractServer | None = None
 
     async def start(self) -> None:
@@ -61,9 +71,28 @@ class VppNodeServer:
             raw = await asyncio.wait_for(reader.readline(), timeout=4.0)
             if not raw:
                 return
-            payload = json.loads(raw.decode("utf-8"))
+            envelope = json.loads(raw.decode("utf-8"))
+            if self.security is not None:
+                ok, payload, reason = self.security.verify_node_message(envelope)
+                if not ok or payload is None:
+                    if self.log is not None:
+                        self.log(
+                            "SECURITY_MESSAGE_REJECTED "
+                            f"receiver=Node{self.node_id} reason={reason}"
+                        )
+                    return
+            else:
+                payload = envelope
+
             if payload.get("type") != "heartbeat":
                 return
+            if self.security is not None and "reported_power_mw" in payload:
+                self.security.observe_node_report(
+                    int(payload.get("src", 0)),
+                    float(payload.get("reported_power_mw", 0.0)),
+                    float(payload.get("elapsed_s", 0.0)),
+                    f"heartbeat Node{payload.get('src')}->Node{self.node_id}",
+                )
 
             now = time.perf_counter()
             ack = {
@@ -73,8 +102,10 @@ class VppNodeServer:
                 "seq": payload.get("seq"),
                 "server_received_perf": now,
                 "server_wall_time": datetime.now().isoformat(timespec="milliseconds"),
+                "reported_power_mw": node_reported_power_mw(self.node_id, float(payload.get("elapsed_s", 0.0))),
             }
-            writer.write((json.dumps(ack, separators=(",", ":")) + "\n").encode("utf-8"))
+            response = self.security.sign_node_message(self.node_id, ack) if self.security is not None else ack
+            writer.write((json.dumps(response, separators=(",", ":")) + "\n").encode("utf-8"))
             await writer.drain()
 
             if self.log is not None and payload.get("seq", 0) <= 3:
@@ -142,6 +173,16 @@ class RollingProbeStats:
         )
 
 
+def node_reported_power_mw(node_id: int, elapsed_s: float) -> float:
+    capacity = NODE_CAPACITY_MW[node_id]
+    phase = (elapsed_s % 120.0) / 120.0
+    if node_id in {1, 2}:
+        return max(0.0, capacity * math.sin(math.pi * phase) * 0.86)
+    if node_id in {3, 4}:
+        return max(0.0, capacity * (0.34 + 0.10 * math.sin(elapsed_s / 13.0 + node_id)))
+    return 4.0 * math.sin(elapsed_s / 18.0)
+
+
 class ToxiproxyMeasuredNetwork:
     """Run real node sockets, route probes through Toxiproxy, and measure QoS."""
 
@@ -149,22 +190,27 @@ class ToxiproxyMeasuredNetwork:
         self,
         project_root: Path,
         endpoints: Iterable[ProxyEndpoint],
+        security: ZeroTrustSecurityManager | None = None,
         host: str = "127.0.0.1",
         node_base_port: int = 19100,
         api_url: str = "http://127.0.0.1:8474",
         probe_history_size: int = 12,
         availability_loss_threshold: float = 0.35,
         availability_delay_threshold_ms: float = 320.0,
+        security_incident: str = "none",
+        security_incident_at_s: float = 8.0,
+        security_incident_node: int = 3,
     ) -> None:
         self.project_root = project_root
+        self.security = security
         self.host = host
         self.node_base_port = node_base_port
         self.endpoints = list(endpoints)
-        self.api = ToxiproxyHttpClient(api_url)
+        self.api = ToxiproxyHttpClient(api_url, security=security)
         self.availability_loss_threshold = availability_loss_threshold
         self.availability_delay_threshold_ms = availability_delay_threshold_ms
         self.nodes = [
-            VppNodeServer(node_id, host, node_base_port + node_id, self._log_limited_event)
+            VppNodeServer(node_id, host, node_base_port + node_id, self._log_limited_event, security)
             for node_id in NODE_IDS
         ]
         self.stats = {
@@ -175,6 +221,10 @@ class ToxiproxyMeasuredNetwork:
         self.evidence_events: List[str] = []
         self._toxic_update_events = 0
         self.log: LogCallback | None = None
+        self.security_incident = security_incident
+        self.security_incident_at_s = security_incident_at_s
+        self.security_incident_node = security_incident_node
+        self._security_incident_sent = False
 
     async def start(self, log: LogCallback | None = None) -> None:
         self.log = log
@@ -205,6 +255,7 @@ class ToxiproxyMeasuredNetwork:
         await asyncio.gather(*(node.stop() for node in self.nodes), return_exceptions=True)
 
     async def apply_and_measure(self, elapsed_s: float, desired: QualitySnapshot) -> QualitySnapshot:
+        self._maybe_inject_control_incident(elapsed_s)
         for endpoint in self.endpoints:
             metric = desired.links[endpoint.key]
             self.api.configure_link(endpoint, metric.delay_ms, metric.loss_rate)
@@ -289,7 +340,9 @@ class ToxiproxyMeasuredNetwork:
             "seq": seq,
             "elapsed_s": elapsed_s,
             "client_wall_time": datetime.now().isoformat(timespec="milliseconds"),
+            "reported_power_mw": self._reported_power_for_probe(endpoint.src, elapsed_s),
         }
+        outbound = self._signed_or_plain_payload(endpoint, payload, elapsed_s)
 
         start_perf = time.perf_counter()
         try:
@@ -297,7 +350,7 @@ class ToxiproxyMeasuredNetwork:
                 asyncio.open_connection(endpoint.listen_host, endpoint.listen_port),
                 timeout=0.6,
             )
-            writer.write((json.dumps(payload, separators=(",", ":")) + "\n").encode("utf-8"))
+            writer.write((json.dumps(outbound, separators=(",", ":")) + "\n").encode("utf-8"))
             await writer.drain()
             raw = await asyncio.wait_for(reader.readline(), timeout=timeout_s)
             rtt_ms = (time.perf_counter() - start_perf) * 1000.0
@@ -306,7 +359,20 @@ class ToxiproxyMeasuredNetwork:
 
             if not raw:
                 raise TimeoutError("connection closed before ack")
-            ack = json.loads(raw.decode("utf-8"))
+            ack_envelope = json.loads(raw.decode("utf-8"))
+            if self.security is not None:
+                ok, ack, reason = self.security.verify_node_message(ack_envelope)
+                if not ok or ack is None:
+                    raise TimeoutError(f"security rejected ack: {reason}")
+                if "reported_power_mw" in ack:
+                    self.security.observe_node_report(
+                        int(ack.get("src", 0)),
+                        float(ack.get("reported_power_mw", 0.0)),
+                        elapsed_s,
+                        f"heartbeat_ack Node{ack.get('src')}->Node{endpoint.src}",
+                    )
+            else:
+                ack = ack_envelope
             if ack.get("seq") != seq:
                 raise TimeoutError(f"unexpected ack seq={ack.get('seq')}")
 
@@ -380,6 +446,70 @@ class ToxiproxyMeasuredNetwork:
             f"api_toxics={toxic_summary}"
         )
 
+    def _reported_power_for_probe(self, node_id: int, elapsed_s: float) -> float:
+        if self._should_inject_data_incident(node_id, elapsed_s):
+            self._security_incident_sent = True
+            return NODE_CAPACITY_MW[node_id] * 1.6
+        return node_reported_power_mw(node_id, elapsed_s)
+
+    def _signed_or_plain_payload(
+        self,
+        endpoint: ProxyEndpoint,
+        payload: Dict[str, object],
+        elapsed_s: float,
+    ) -> Dict[str, object]:
+        if self.security is None:
+            return payload
+        envelope = self.security.sign_node_message(endpoint.src, payload)
+        if self._should_inject_forged_incident(endpoint.src, elapsed_s):
+            self._security_incident_sent = True
+            envelope["mac"] = "forged-" + str(envelope.get("mac", ""))[7:]
+            self._record_evidence(
+                "SECURITY_TEST_FORGED_MESSAGE "
+                f"elapsed={elapsed_s:.1f}s node={endpoint.src} link={endpoint.key}"
+            )
+        return envelope
+
+    def _should_inject_forged_incident(self, node_id: int, elapsed_s: float) -> bool:
+        return (
+            self.security_incident == "forged"
+            and not self._security_incident_sent
+            and node_id == self.security_incident_node
+            and elapsed_s >= self.security_incident_at_s
+        )
+
+    def _should_inject_data_incident(self, node_id: int, elapsed_s: float) -> bool:
+        return (
+            self.security_incident == "anomalous"
+            and not self._security_incident_sent
+            and node_id == self.security_incident_node
+            and elapsed_s >= self.security_incident_at_s
+        )
+
+    def _maybe_inject_control_incident(self, elapsed_s: float) -> None:
+        if (
+            self.security is None
+            or self.security_incident != "control"
+            or self._security_incident_sent
+            or elapsed_s < self.security_incident_at_s
+            or not self.endpoints
+        ):
+            return
+        self._security_incident_sent = True
+        try:
+            endpoint = self.endpoints[0]
+            self.api.configure_link(
+                endpoint,
+                80.0,
+                0.05,
+                actor=f"node_{self.security_incident_node}",
+            )
+        except PermissionError:
+            self._record_evidence(
+                "SECURITY_TEST_CONTROL_ACCESS_DENIED "
+                f"elapsed={elapsed_s:.1f}s actor=node_{self.security_incident_node}"
+            )
+
 
 class ToxiproxyLinkQualitySource:
     """Gilbert-Elliott control plane + Toxiproxy real data-plane measurement."""
@@ -394,6 +524,10 @@ class ToxiproxyLinkQualitySource:
         force_bad_link: str | None = None,
         force_bad_start_s: float = 35.0,
         force_bad_duration_s: float = 12.0,
+        security: ZeroTrustSecurityManager | None = None,
+        security_incident: str = "none",
+        security_incident_at_s: float = 8.0,
+        security_incident_node: int = 3,
     ) -> None:
         self.project_root = project_root
         self.model = LinkQualitySimulator(cycle_s=cycle_s)
@@ -402,8 +536,12 @@ class ToxiproxyLinkQualitySource:
         self.network = ToxiproxyMeasuredNetwork(
             project_root,
             endpoints=self.endpoints,
+            security=security,
             host=host,
             api_url=f"http://{host}:{api_port}",
+            security_incident=security_incident,
+            security_incident_at_s=security_incident_at_s,
+            security_incident_node=security_incident_node,
         )
         self.force_bad_link = force_bad_link
         self.force_bad_start_s = force_bad_start_s

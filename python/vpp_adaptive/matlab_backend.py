@@ -3,12 +3,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List, Sequence, Tuple
 
+from .security import MASTER_ACTOR, ZeroTrustSecurityManager
+
 
 class MatlabDispatchBackend:
     """MATLAB Engine wrapper with a safe local fallback."""
 
-    def __init__(self, project_root: Path) -> None:
+    def __init__(self, project_root: Path, security: ZeroTrustSecurityManager | None = None) -> None:
         self.project_root = project_root
+        self.security = security
         self.available = False
         self.degraded_reason = ""
         self._engine = None
@@ -31,7 +34,14 @@ class MatlabDispatchBackend:
         delay_steps: int,
         loss_rate: float,
         p_max: Sequence[float] | None = None,
+        control_actor: str = MASTER_ACTOR,
     ) -> Tuple[List[float], str]:
+        if self.security is not None:
+            self.security.require_control_actor(
+                control_actor,
+                "matlab.et_admm_robust",
+                {"demand_mw": demand_mw, "delay_steps": delay_steps, "loss_rate": loss_rate},
+            )
         dynamic_p_max = list(p_max) if p_max is not None else self.p_max
         if self.available:
             try:

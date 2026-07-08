@@ -7,6 +7,7 @@ import type {
   OperatingMode,
   ForecastPayload,
   NodeDispatchSource,
+  SecurityPayload,
   TelemetryPayload,
   TelemetrySnapshot,
   TransitionRecord,
@@ -194,6 +195,7 @@ function normalizeSnapshot(raw: Partial<TelemetrySnapshot>): TelemetrySnapshot {
     links: normalizeLinks(raw.links),
     clusters: raw.clusters ?? [[1, 2, 3, 4, 5]],
     forecast: normalizeForecast(raw.forecast, raw),
+    security: normalizeSecurity(raw.security, Number(raw.elapsed_s ?? 0)),
     target_mw: toFive(raw.target_mw),
     command_mw: toFive(raw.command_mw),
     max_delta_mw: Number(raw.max_delta_mw ?? 0),
@@ -202,6 +204,89 @@ function normalizeSnapshot(raw: Partial<TelemetrySnapshot>): TelemetrySnapshot {
     active_controllers: normalizeControllers(raw.active_controllers, mode),
     controller_trace: normalizeControllerTrace(raw.controller_trace, mode),
     dispatch_sources: normalizeDispatchSources(raw.dispatch_sources, mode),
+  }
+}
+
+function normalizeSecurity(raw?: Partial<SecurityPayload>, elapsed = 0): SecurityPayload {
+  if (!raw) {
+    return makeSyntheticSecurity(elapsed)
+  }
+  return {
+    zero_trust_enabled: Boolean(raw.zero_trust_enabled ?? true),
+    low_trust_threshold: Number(raw.low_trust_threshold ?? 60),
+    audit_log_path: raw.audit_log_path ?? '',
+    audit_jsonl_path: raw.audit_jsonl_path ?? '',
+    nodes: Array.from({ length: 5 }, (_, index) => {
+      const node = index + 1
+      const source = raw.nodes?.find((item) => Number(item.node) === node)
+      return {
+        node,
+        identity: String(source?.identity ?? `node-${node}`),
+        authentication_status: String(source?.authentication_status ?? '正常'),
+        trust_score: Number(source?.trust_score ?? 100),
+        low_trust: Boolean(source?.low_trust ?? false),
+        accepted_messages: Number(source?.accepted_messages ?? 0),
+        auth_failures: Number(source?.auth_failures ?? 0),
+        invalid_reports: Number(source?.invalid_reports ?? 0),
+        jump_alerts: Number(source?.jump_alerts ?? 0),
+        recent_alerts: Array.isArray(source?.recent_alerts)
+          ? source.recent_alerts.map(String)
+          : [],
+      }
+    }),
+    recent_events: Array.isArray(raw.recent_events)
+      ? raw.recent_events.map((event) => ({
+          timestamp: String(event.timestamp ?? ''),
+          event_type: String(event.event_type ?? ''),
+          severity: String(event.severity ?? 'INFO'),
+          node:
+            event.node === null || event.node === undefined
+              ? null
+              : Number(event.node),
+          reason: String(event.reason ?? ''),
+          metadata: event.metadata ?? {},
+        }))
+      : [],
+  }
+}
+
+function makeSyntheticSecurity(elapsed: number): SecurityPayload {
+  const alertActive = elapsed > 70 && elapsed < 92
+  return {
+    zero_trust_enabled: true,
+    low_trust_threshold: 60,
+    audit_log_path: 'logs/security_audit/security_audit_demo.log',
+    audit_jsonl_path: 'logs/security_audit/security_audit_demo.jsonl',
+    nodes: Array.from({ length: 5 }, (_, index) => {
+      const node = index + 1
+      const isAlertNode = alertActive && node === 3
+      return {
+        node,
+        identity: `node-${node}-${node <= 2 ? 'pv' : node <= 4 ? 'wind' : 'bess'}`,
+        authentication_status: isAlertNode ? '异常' : '正常',
+        trust_score: isAlertNode ? 56 : 98,
+        low_trust: isAlertNode,
+        accepted_messages: Math.max(0, Math.floor(elapsed / 2)),
+        auth_failures: isAlertNode ? 2 : 0,
+        invalid_reports: isAlertNode ? 1 : 0,
+        jump_alerts: 0,
+        recent_alerts: isAlertNode
+          ? ['HMAC签名验证失败，消息可能被伪造或篡改', '节点信任评分低于阈值']
+          : [],
+      }
+    }),
+    recent_events: alertActive
+      ? [
+          {
+            timestamp: 'demo',
+            event_type: 'AUTHENTICATION_FAILED',
+            severity: 'HIGH',
+            node: 3,
+            reason: '离线演示：伪造身份消息被拒绝',
+            metadata: {},
+          },
+        ]
+      : [],
   }
 }
 
@@ -427,6 +512,7 @@ function makeSyntheticSnapshot(elapsed: number): TelemetrySnapshot {
       sample_count: Math.max(0, elapsed - 5) * 4,
       history_path: 'logs/forecast_accuracy/renewable_forecast_accuracy.csv',
     },
+    security: makeSyntheticSecurity(elapsed),
     target_mw: [solar, solar * 0.78, wind, wind * 0.82, bess],
     command_mw: [solar, solar * 0.78, wind, wind * 0.82, bess],
     max_delta_mw: 2.5,

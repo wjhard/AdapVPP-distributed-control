@@ -13,6 +13,7 @@ from .matlab_backend import MatlabDispatchBackend
 from .models import DispatchResult, ForecastSnapshot, MODE_LABELS, OperatingMode, QualitySnapshot, StateDecision
 from .resource_profile import ResourceProfile
 from .runtime_logging import RunLogger
+from .security import ZeroTrustSecurityManager
 from .state_machine import AdaptiveStateMachine
 from .toxiproxy_network import ToxiproxyLinkQualitySource
 from .websocket_server import TelemetryWebSocketServer
@@ -33,6 +34,9 @@ class AdaptiveVppDemo:
         force_bad_start_s: float = 35.0,
         force_bad_duration_s: float = 12.0,
         force_storage_charge_test: bool = False,
+        security_incident: str = "none",
+        security_incident_at_s: float = 8.0,
+        security_incident_node: int = 3,
     ) -> None:
         self.project_root = project_root
         self.duration_s = duration_s
@@ -41,6 +45,11 @@ class AdaptiveVppDemo:
         self.use_toxiproxy = use_toxiproxy
 
         self.run_logger = RunLogger(project_root)
+        self.security = ZeroTrustSecurityManager(project_root)
+        self.security_incident = security_incident
+        self.security_incident_at_s = security_incident_at_s
+        self.security_incident_node = security_incident_node
+        self._formula_security_incident_sent = False
         if use_toxiproxy:
             self.link_quality = ToxiproxyLinkQualitySource(
                 project_root=project_root,
@@ -49,6 +58,10 @@ class AdaptiveVppDemo:
                 force_bad_link=force_bad_link,
                 force_bad_start_s=force_bad_start_s,
                 force_bad_duration_s=force_bad_duration_s,
+                security=self.security,
+                security_incident=security_incident,
+                security_incident_at_s=security_incident_at_s,
+                security_incident_node=security_incident_node,
             )
         else:
             self.link_quality = LinkQualitySimulator(cycle_s=duration_s)
@@ -56,7 +69,7 @@ class AdaptiveVppDemo:
         self.clusterer = ConnectivityClusterer()
         self.resources = ResourceProfile(project_root)
         self.forecaster = ShortTermRenewableForecaster(project_root)
-        self.backend = MatlabDispatchBackend(project_root)
+        self.backend = MatlabDispatchBackend(project_root, security=self.security)
         self.dispatcher = AdaptiveDispatcher(
             self.backend,
             force_storage_charge_test=force_storage_charge_test,
@@ -88,7 +101,10 @@ class AdaptiveVppDemo:
                     actual_resource = self.resources.sample(elapsed_s, self.duration_s)
                     forecast = self.forecaster.update(elapsed_s, actual_resource)
                     dispatch_resource = self.forecaster.forecast_resource(actual_resource, forecast)
-                    forecast_pmax = self.forecaster.forecast_pmax(forecast)
+                    self._maybe_inject_formula_security_incident(elapsed_s)
+                    forecast_pmax = self.security.apply_trust_weights(
+                        self.forecaster.forecast_pmax(forecast)
+                    )
                     dispatch = self.dispatcher.dispatch(
                         decision.mode,
                         quality,
@@ -100,8 +116,10 @@ class AdaptiveVppDemo:
 
                     if decision.changed:
                         self.run_logger.transition(decision, quality, dispatch)
-                    self.run_logger.snapshot(quality, decision, dispatch, forecast)
-                    await self.websocket.broadcast(self._payload(quality, decision, dispatch, forecast))
+                    self.run_logger.snapshot(quality, decision, dispatch, forecast, self.security.snapshot())
+                    await self.websocket.broadcast(
+                        self._payload(quality, decision, dispatch, forecast, self.security.snapshot())
+                    )
 
                     if self.realtime and step < total_steps - 1:
                         await asyncio.sleep(self.interval_s)
@@ -118,11 +136,16 @@ class AdaptiveVppDemo:
         )
         for line in link_diagnostics:
             self.run_logger.info(line)
+        for line in self.security.diagnostic_lines():
+            self.run_logger.info(line)
         self.run_logger.print_key_fragments()
         print("\nVisited modes:", " -> ".join(MODE_LABELS[mode] for mode in self.visited_modes))
         title = "Toxiproxy measured link diagnostics" if self.use_toxiproxy else "Gilbert-Elliott link diagnostics"
         print(f"\n=== {title} ===")
         for line in link_diagnostics:
+            print(line)
+        print("\n=== Zero-trust security diagnostics ===")
+        for line in self.security.diagnostic_lines():
             print(line)
 
     async def _start_link_quality_source(self) -> None:
@@ -154,12 +177,28 @@ class AdaptiveVppDemo:
             return [[1], [2], [3], [4], [5]]
         return self.clusterer.connected_components(quality)
 
+    def _maybe_inject_formula_security_incident(self, elapsed_s: float) -> None:
+        if (
+            self.use_toxiproxy
+            or self.security_incident == "none"
+            or self._formula_security_incident_sent
+            or elapsed_s < self.security_incident_at_s
+        ):
+            return
+        self._formula_security_incident_sent = True
+        self.security.simulate_formula_incident(
+            self.security_incident,
+            self.security_incident_node,
+            elapsed_s,
+        )
+
     @staticmethod
     def _payload(
         quality: QualitySnapshot,
         decision: StateDecision,
         dispatch: DispatchResult,
         forecast: ForecastSnapshot,
+        security: Dict[str, object],
     ) -> Dict[str, object]:
         return {
             "elapsed_s": round(quality.elapsed_s, 3),
@@ -170,6 +209,7 @@ class AdaptiveVppDemo:
             "real_network_measurement": quality.real_network_measurement,
             "links": quality.compact_links(),
             "clusters": dispatch.clusters,
+            "security": security,
             "forecast": {
                 "method": forecast.method,
                 "horizon_minutes": round(forecast.horizon_minutes, 3),

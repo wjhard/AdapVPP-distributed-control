@@ -59,6 +59,37 @@ export type ForecastPayload = {
   history_path: string
 }
 
+export type SecurityEventPayload = {
+  timestamp: string
+  event_type: string
+  severity: string
+  node?: number | null
+  reason: string
+  metadata?: Record<string, unknown>
+}
+
+export type NodeSecurityStatus = {
+  node: number
+  identity: string
+  authentication_status: string
+  trust_score: number
+  low_trust: boolean
+  accepted_messages: number
+  auth_failures: number
+  invalid_reports: number
+  jump_alerts: number
+  recent_alerts: string[]
+}
+
+export type SecurityPayload = {
+  zero_trust_enabled: boolean
+  low_trust_threshold: number
+  audit_log_path: string
+  audit_jsonl_path?: string
+  nodes: NodeSecurityStatus[]
+  recent_events: SecurityEventPayload[]
+}
+
 export type TelemetryPayload = {
   elapsed_s: number
   mode: OperatingMode
@@ -69,6 +100,7 @@ export type TelemetryPayload = {
   links: LinkMap
   clusters: number[][]
   forecast?: ForecastPayload
+  security?: SecurityPayload
   dispatch: DispatchPayload
 }
 
@@ -82,6 +114,7 @@ export type TelemetrySnapshot = {
   links: LinkMap
   clusters: number[][]
   forecast: ForecastPayload
+  security: SecurityPayload
   target_mw: number[]
   command_mw: number[]
   max_delta_mw: number

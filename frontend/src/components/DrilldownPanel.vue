@@ -53,6 +53,14 @@ const activeNodeSource = computed(() => {
   return props.current.dispatch_sources.find((source) => source.node === node.id) ?? null
 })
 
+const activeNodeSecurity = computed(() => {
+  const node = activeNode.value
+  if (!node) {
+    return null
+  }
+  return props.current.security.nodes.find((item) => item.node === node.id) ?? null
+})
+
 const relatedLinks = computed(() => {
   const node = activeNode.value
   if (!node) {
@@ -333,6 +341,10 @@ function formatLoss(value?: number) {
 function formatDelay(value?: number) {
   return `${(value ?? 0).toFixed(1)} ms`
 }
+
+function formatTrust(value?: number) {
+  return `${(value ?? 0).toFixed(1)} / 100`
+}
 </script>
 
 <template>
@@ -375,6 +387,35 @@ function formatDelay(value?: number) {
                 }}
               </em>
               <em v-else>未被高优先级控制器覆盖</em>
+            </div>
+          </div>
+          <div class="drilldown-card">
+            <h3>安全状态</h3>
+            <div
+              class="security-status-card"
+              :class="{ 'security-status-card--alert': activeNodeSecurity?.low_trust }"
+            >
+              <div>
+                <span>身份认证</span>
+                <strong :class="activeNodeSecurity?.authentication_status === '正常' ? 'state-good' : 'state-bad'">
+                  {{ activeNodeSecurity?.authentication_status ?? '未知' }}
+                </strong>
+              </div>
+              <div>
+                <span>信任评分</span>
+                <strong>{{ formatTrust(activeNodeSecurity?.trust_score) }}</strong>
+              </div>
+              <div>
+                <span>安全计数</span>
+                <strong>
+                  签名失败 {{ activeNodeSecurity?.auth_failures ?? 0 }} /
+                  异常上报 {{ activeNodeSecurity?.invalid_reports ?? 0 }}
+                </strong>
+              </div>
+              <ul v-if="activeNodeSecurity?.recent_alerts.length">
+                <li v-for="alert in activeNodeSecurity.recent_alerts" :key="alert">{{ alert }}</li>
+              </ul>
+              <p v-else>近期未触发安全告警，节点处于持续验证正常状态。</p>
             </div>
           </div>
           <div class="drilldown-card">

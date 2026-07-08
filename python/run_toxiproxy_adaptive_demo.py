@@ -29,6 +29,14 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Force the storage-priority controller to override BESS dispatch for verification.",
     )
+    parser.add_argument(
+        "--simulate-security-incident",
+        choices=["none", "forged", "anomalous", "control"],
+        default="none",
+        help="Inject a zero-trust test event: forged HMAC, anomalous node report, or unauthorized control access.",
+    )
+    parser.add_argument("--security-incident-at", type=float, default=8.0, help="Elapsed seconds for security test injection.")
+    parser.add_argument("--security-incident-node", type=int, default=3, help="Node id used for the security test injection.")
     return parser.parse_args()
 
 
@@ -48,6 +56,9 @@ async def main() -> None:
         force_bad_start_s=args.force_bad_at,
         force_bad_duration_s=args.force_bad_duration,
         force_storage_charge_test=args.force_storage_charge_test,
+        security_incident=args.simulate_security_incident,
+        security_incident_at_s=args.security_incident_at,
+        security_incident_node=args.security_incident_node,
     )
     await demo.run()
 

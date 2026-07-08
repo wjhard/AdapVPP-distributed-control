@@ -1,0 +1,3 @@
+2026-07-08T13:31:02.905 INFO ZERO_TRUST_READY node=- reason=零信任节点认证与持续信任评估已启用 metadata={'nodes': [1, 2, 3, 4, 5]}
+2026-07-08T13:31:22.068 HIGH AUTHENTICATION_FAILED node=3 reason=HMAC签名验证失败，消息可能被伪造或篡改 metadata={}
+2026-07-08T13:31:22.069 HIGH LOW_TRUST_NODE_ISOLATED node=3 reason=节点信任评分降至55.0，后续调度降低其数据采信权重 metadata={'trust_score': 55.0, 'threshold': 60.0}

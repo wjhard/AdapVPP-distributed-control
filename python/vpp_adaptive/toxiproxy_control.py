@@ -10,6 +10,8 @@ from typing import Dict, Iterable, List, Tuple
 
 import requests
 
+from .security import MASTER_ACTOR, ZeroTrustSecurityManager
+
 try:  # Imported to ensure the requested Python client package is present.
     import toxiproxy as toxiproxy_python_client  # type: ignore  # noqa: F401
 except Exception:  # pragma: no cover - direct HTTP API remains the runtime path.
@@ -51,11 +53,16 @@ class ToxiproxyApiError(RuntimeError):
 class ToxiproxyHttpClient:
     """Thin HTTP API wrapper for the Toxiproxy management server."""
 
-    def __init__(self, api_url: str = "http://127.0.0.1:8474") -> None:
+    def __init__(
+        self,
+        api_url: str = "http://127.0.0.1:8474",
+        security: ZeroTrustSecurityManager | None = None,
+    ) -> None:
         self.api_url = api_url.rstrip("/")
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": "adapvpp-toxiproxy-client/1.0"})
         self.native_packet_loss_supported: bool | None = None
+        self.security = security
 
     def version(self) -> str:
         response = self.session.get(f"{self.api_url}/version", timeout=2)
@@ -72,12 +79,14 @@ class ToxiproxyHttpClient:
         response.raise_for_status()
         return response.json()
 
-    def delete_proxy(self, name: str) -> None:
+    def delete_proxy(self, name: str, actor: str = MASTER_ACTOR) -> None:
+        self._require_control(actor, "toxiproxy.delete_proxy", {"proxy": name})
         response = self.session.delete(f"{self.api_url}/proxies/{name}", timeout=5)
         if response.status_code not in {200, 204, 404}:
             raise ToxiproxyApiError(f"delete proxy {name} failed: {response.status_code} {response.text}")
 
-    def create_proxy(self, endpoint: ProxyEndpoint) -> dict:
+    def create_proxy(self, endpoint: ProxyEndpoint, actor: str = MASTER_ACTOR) -> dict:
+        self._require_control(actor, "toxiproxy.create_proxy", {"proxy": endpoint.name})
         payload = {
             "name": endpoint.name,
             "listen": endpoint.listen,
@@ -85,7 +94,7 @@ class ToxiproxyHttpClient:
         }
         response = self.session.post(f"{self.api_url}/proxies", json=payload, timeout=5)
         if response.status_code == 409:
-            self.delete_proxy(endpoint.name)
+            self.delete_proxy(endpoint.name, actor=actor)
             response = self.session.post(f"{self.api_url}/proxies", json=payload, timeout=5)
         if response.status_code not in {200, 201}:
             raise ToxiproxyApiError(
@@ -93,7 +102,12 @@ class ToxiproxyHttpClient:
             )
         return response.json()
 
-    def delete_toxic(self, proxy_name: str, toxic_name: str) -> None:
+    def delete_toxic(self, proxy_name: str, toxic_name: str, actor: str = MASTER_ACTOR) -> None:
+        self._require_control(
+            actor,
+            "toxiproxy.delete_toxic",
+            {"proxy": proxy_name, "toxic": toxic_name},
+        )
         response = self.session.delete(
             f"{self.api_url}/proxies/{proxy_name}/toxics/{toxic_name}",
             timeout=5,
@@ -111,7 +125,13 @@ class ToxiproxyHttpClient:
         stream: str,
         toxicity: float,
         attributes: dict,
+        actor: str = MASTER_ACTOR,
     ) -> dict:
+        self._require_control(
+            actor,
+            "toxiproxy.replace_toxic",
+            {"proxy": proxy_name, "toxic": toxic_name, "type": toxic_type},
+        )
         payload = {
             "name": toxic_name,
             "type": toxic_type,
@@ -146,8 +166,20 @@ class ToxiproxyHttpClient:
             )
         return post_response.json()
 
-    def configure_link(self, endpoint: ProxyEndpoint, delay_ms: float, loss_rate: float) -> None:
+    def configure_link(
+        self,
+        endpoint: ProxyEndpoint,
+        delay_ms: float,
+        loss_rate: float,
+        actor: str = MASTER_ACTOR,
+    ) -> None:
         """Write real network impairment into both directions of one proxy."""
+
+        self._require_control(
+            actor,
+            "toxiproxy.configure_link",
+            {"link": endpoint.key, "delay_ms": delay_ms, "loss_rate": loss_rate},
+        )
 
         one_way_latency_ms = max(0, int(round(delay_ms / 2.0)))
         jitter_ms = max(1, int(round(max(delay_ms * 0.08, 2.0) / 2.0)))
@@ -160,11 +192,12 @@ class ToxiproxyHttpClient:
                 stream,
                 1.0,
                 {"latency": one_way_latency_ms, "jitter": jitter_ms},
+                actor=actor,
             )
 
-        self._configure_loss(endpoint, loss_rate)
+        self._configure_loss(endpoint, loss_rate, actor=actor)
 
-    def _configure_loss(self, endpoint: ProxyEndpoint, loss_rate: float) -> None:
+    def _configure_loss(self, endpoint: ProxyEndpoint, loss_rate: float, actor: str = MASTER_ACTOR) -> None:
         loss_rate = max(0.0, min(float(loss_rate), 0.98))
         if self.native_packet_loss_supported is None:
             self.native_packet_loss_supported = self._probe_packet_loss_support(endpoint.name)
@@ -178,6 +211,7 @@ class ToxiproxyHttpClient:
                     stream,
                     1.0,
                     {"percentage": loss_rate * 100.0},
+                    actor=actor,
                 )
             return
 
@@ -194,6 +228,7 @@ class ToxiproxyHttpClient:
                 stream,
                 per_stream_toxicity,
                 {"timeout": 1},
+                actor=actor,
             )
 
     def _probe_packet_loss_support(self, proxy_name: str) -> bool:
@@ -214,6 +249,10 @@ class ToxiproxyHttpClient:
             self.delete_toxic(proxy_name, toxic_name)
             return True
         return False
+
+    def _require_control(self, actor: str, interface: str, metadata: dict) -> None:
+        if self.security is not None:
+            self.security.require_control_actor(actor, interface, metadata)
 
 
 class ToxiproxyServerProcess:
