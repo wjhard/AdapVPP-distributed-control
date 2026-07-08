@@ -110,20 +110,47 @@ textarea {
 
 .brand__title {
   color: #f3fdff;
-  font-size: 24px;
+  font-size: 21px;
   font-weight: 700;
   letter-spacing: 0;
+  line-height: 1.08;
   white-space: nowrap;
 }
 
 .brand__sub {
-  margin-top: 4px;
+  margin-top: 2px;
   color: #82adbd;
-  font-size: 13px;
+  font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 680px;
+}
+
+.controller-tags {
+  height: 18px;
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.controller-tags span {
+  max-width: 178px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  border: 1px solid rgba(56, 243, 255, 0.24);
+  border-radius: 999px;
+  color: #bff8ff;
+  background: rgba(56, 243, 255, 0.08);
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .mode-pill {
@@ -1102,6 +1129,39 @@ textarea {
   color: #f3fdff;
   font-family: Consolas, "Roboto Mono", monospace;
   font-size: 24px;
+}
+
+.controller-source-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(56, 243, 255, 0.16);
+  border-radius: 6px;
+  background: rgba(7, 30, 37, 0.78);
+}
+
+.controller-source-card strong,
+.controller-source-card span,
+.controller-source-card em {
+  display: block;
+}
+
+.controller-source-card strong {
+  color: #38f3ff;
+  font-size: 18px;
+}
+
+.controller-source-card span {
+  color: #b8d7e8;
+  font-size: 13px;
+  line-height: 1.48;
+}
+
+.controller-source-card em {
+  color: #f5c84c;
+  font-family: Consolas, "Roboto Mono", monospace;
+  font-size: 12px;
+  font-style: normal;
 }
 
 .transition-summary {

@@ -45,6 +45,14 @@ const activeLink = computed(() => {
 
 const activeTransition = computed(() => (props.view?.type === 'transition' ? props.view.record : null))
 
+const activeNodeSource = computed(() => {
+  const node = activeNode.value
+  if (!node) {
+    return null
+  }
+  return props.current.dispatch_sources.find((source) => source.node === node.id) ?? null
+})
+
 const relatedLinks = computed(() => {
   const node = activeNode.value
   if (!node) {
@@ -351,6 +359,23 @@ function formatDelay(value?: number) {
           <div class="drilldown-card drilldown-card--chart">
             <h3>{{ activeNode.key }} ADMM收敛轨迹</h3>
             <VChart class="chart" :option="admmTraceOption" autoresize />
+          </div>
+          <div class="drilldown-card">
+            <h3>当前指令来源</h3>
+            <div class="controller-source-card">
+              <strong>{{ activeNodeSource?.controller ?? '未知控制器' }}</strong>
+              <span>{{ activeNodeSource?.reason ?? '当前遥测未提供控制器来源' }}</span>
+              <em v-if="activeNodeSource?.overridden">
+                已覆盖 {{ activeNodeSource.previous_controller }}
+                {{
+                  activeNodeSource.previous_value_mw !== null &&
+                  activeNodeSource.previous_value_mw !== undefined
+                    ? `(${activeNodeSource.previous_value_mw.toFixed(2)} MW)`
+                    : ''
+                }}
+              </em>
+              <em v-else>未被高优先级控制器覆盖</em>
+            </div>
           </div>
           <div class="drilldown-card">
             <h3>相关链路质量</h3>

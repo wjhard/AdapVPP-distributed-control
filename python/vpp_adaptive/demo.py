@@ -32,6 +32,7 @@ class AdaptiveVppDemo:
         force_bad_link: str | None = None,
         force_bad_start_s: float = 35.0,
         force_bad_duration_s: float = 12.0,
+        force_storage_charge_test: bool = False,
     ) -> None:
         self.project_root = project_root
         self.duration_s = duration_s
@@ -56,7 +57,10 @@ class AdaptiveVppDemo:
         self.resources = ResourceProfile(project_root)
         self.forecaster = ShortTermRenewableForecaster(project_root)
         self.backend = MatlabDispatchBackend(project_root)
-        self.dispatcher = AdaptiveDispatcher(self.backend)
+        self.dispatcher = AdaptiveDispatcher(
+            self.backend,
+            force_storage_charge_test=force_storage_charge_test,
+        )
         self.websocket = TelemetryWebSocketServer(websocket_host, websocket_port)
         self.visited_modes: List[OperatingMode] = [OperatingMode.GLOBAL]
 
@@ -191,5 +195,35 @@ class AdaptiveVppDemo:
                 "max_delta_mw": round(dispatch.max_delta_mw, 5),
                 "backend": dispatch.backend,
                 "note": dispatch.note,
+                "active_controllers": dispatch.active_controllers,
+                "controller_trace": [
+                    {
+                        "controller": item.controller,
+                        "controller_key": item.controller_key,
+                        "priority": item.priority,
+                        "action": item.action,
+                        "reason": item.reason,
+                        "nodes": item.nodes,
+                    }
+                    for item in dispatch.controller_trace
+                ],
+                "dispatch_sources": [
+                    {
+                        "node": item.node,
+                        "controller": item.controller,
+                        "controller_key": item.controller_key,
+                        "priority": item.priority,
+                        "reason": item.reason,
+                        "overridden": item.overridden,
+                        "previous_controller": item.previous_controller,
+                        "previous_value_mw": (
+                            round(item.previous_value_mw, 3)
+                            if item.previous_value_mw is not None
+                            else None
+                        ),
+                        "override_reason": item.override_reason,
+                    }
+                    for item in dispatch.dispatch_sources
+                ],
             },
         }

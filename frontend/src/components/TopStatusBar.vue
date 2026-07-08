@@ -5,6 +5,7 @@ import { MODE_CLASS, MODE_COLORS, MODE_LABELS } from '../constants'
 import type { ConnectionStatus, OperatingMode } from '../types'
 
 const props = defineProps<{
+  activeControllers: string[]
   averageDelay: number
   backend: string
   lossRate: number
@@ -33,6 +34,11 @@ const modeColor = computed(() => MODE_COLORS[props.mode])
       <div>
         <div class="brand__title">弱通信自适应虚拟电厂数字孪生监控平台</div>
         <div class="brand__sub">{{ source }} · {{ backend }}</div>
+        <div class="controller-tags" aria-label="当前生效控制器">
+          <span v-for="controller in activeControllers" :key="controller">
+            {{ controller }}
+          </span>
+        </div>
       </div>
     </div>
 

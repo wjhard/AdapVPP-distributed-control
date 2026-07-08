@@ -42,6 +42,7 @@ class RunLogger:
             f"max_loss={quality.max_loss_rate:.3f} "
             f"reason={decision.reason} "
             f"clusters={dispatch.clusters} "
+            f"controllers={dispatch.active_controllers} "
             f"max_output_delta={dispatch.max_delta_mw:.3f}MW "
             f"before={self._round_list(dispatch.previous_command_mw)} "
             f"after={self._round_list(dispatch.command_mw)}"
@@ -68,6 +69,9 @@ class RunLogger:
             "max_delta_mw": round(dispatch.max_delta_mw, 5),
             "backend": dispatch.backend,
             "note": dispatch.note,
+            "active_controllers": dispatch.active_controllers,
+            "controller_trace": [asdict(item) for item in dispatch.controller_trace],
+            "dispatch_sources": [asdict(item) for item in dispatch.dispatch_sources],
         }
         if forecast is not None:
             payload["forecast"] = {

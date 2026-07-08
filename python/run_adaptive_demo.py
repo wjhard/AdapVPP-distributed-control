@@ -28,6 +28,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--force-bad-link", default=None, help="Optional link key such as 1-2 to force into Bad state.")
     parser.add_argument("--force-bad-at", type=float, default=35.0, help="Elapsed seconds when manual Bad link injection starts.")
     parser.add_argument("--force-bad-duration", type=float, default=12.0, help="Manual Bad link injection duration in seconds.")
+    parser.add_argument(
+        "--force-storage-charge-test",
+        action="store_true",
+        help="Force the storage-priority controller to override BESS dispatch for verification.",
+    )
     return parser.parse_args()
 
 
@@ -46,6 +51,7 @@ async def main() -> None:
         force_bad_link=args.force_bad_link,
         force_bad_start_s=args.force_bad_at,
         force_bad_duration_s=args.force_bad_duration,
+        force_storage_charge_test=args.force_storage_charge_test,
     )
     await demo.run()
 

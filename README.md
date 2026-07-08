@@ -26,6 +26,17 @@ logs/forecast_accuracy/renewable_forecast_accuracy_*.csv
 
 仓库中同时保留了一份快速演示样例 `python/results/forecast_accuracy_history.csv`，便于报告直接引用。
 
+## OpenEMS风格控制器架构
+
+Python实时调度层参考成熟能源管理系统的控制器化思路，不再把三态调度逻辑全部集中在一个函数中，而是由 `python/vpp_adaptive/controllers.py` 中的控制器管理器按优先级依次运行具名控制器：
+
+- `经济调度控制器`：全局协同态下调用 MATLAB `et_admm_robust` 或本地经济调度后备算法。
+- `局部聚类协调控制器`：局部聚类态下按通信连通分量分别分配负荷。
+- `应急保守控制器`：完全自治态下执行可再生跟随和储能保守兜底。
+- `储能优先充电控制器`：跨状态叠加控制器；当预测可再生出力超过负荷且BESS SOC低于目标时，以更高优先级覆盖BESS及相关可再生节点指令，优先吸收富余电能。
+
+WebSocket和JSONL日志会同步输出 `active_controllers`、`controller_trace` 和逐节点 `dispatch_sources`，因此每个节点当前指令都可以追溯到具体控制器；若被高优先级控制器覆盖，也会记录原控制器、原指令和覆盖原因。
+
 ## 通信信道模型
 
 `python/vpp_adaptive/link_quality.py` 采用 Gilbert-Elliott 两状态马尔可夫信道模型生成链路质量。该模型把每条通信链路描述为 Good/Bad 两个状态：

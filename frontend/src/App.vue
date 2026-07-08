@@ -81,6 +81,7 @@ onUnmounted(() => {
     <div class="dashboard-viewport" :style="viewportStyle">
       <div class="dashboard-screen" :style="screenStyle">
         <TopStatusBar
+          :active-controllers="telemetry.current.value.active_controllers"
           :average-delay="telemetry.current.value.average_delay_ms"
           :backend="telemetry.current.value.backend"
           :loss-rate="telemetry.current.value.max_loss_rate"

@@ -103,6 +103,29 @@ class ForecastSnapshot:
 
 
 @dataclass(frozen=True)
+class ControllerTraceEntry:
+    controller: str
+    controller_key: str
+    priority: int
+    action: str
+    reason: str
+    nodes: List[int]
+
+
+@dataclass(frozen=True)
+class NodeDispatchSource:
+    node: int
+    controller: str
+    controller_key: str
+    priority: int
+    reason: str
+    overridden: bool = False
+    previous_controller: str | None = None
+    previous_value_mw: float | None = None
+    override_reason: str | None = None
+
+
+@dataclass(frozen=True)
 class DispatchResult:
     mode: OperatingMode
     target_mw: List[float]
@@ -112,3 +135,6 @@ class DispatchResult:
     clusters: List[List[int]]
     backend: str
     note: str
+    active_controllers: List[str]
+    controller_trace: List[ControllerTraceEntry]
+    dispatch_sources: List[NodeDispatchSource]

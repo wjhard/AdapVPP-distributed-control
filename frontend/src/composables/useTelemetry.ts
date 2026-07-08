@@ -2,9 +2,11 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { LINK_KEYS, MODE_LABELS } from '../constants'
 import type {
   ConnectionStatus,
+  ControllerTraceEntry,
   LinkMap,
   OperatingMode,
   ForecastPayload,
+  NodeDispatchSource,
   TelemetryPayload,
   TelemetrySnapshot,
   TransitionRecord,
@@ -174,6 +176,9 @@ function normalizePayload(payload: TelemetryPayload): TelemetrySnapshot {
     max_delta_mw: payload.dispatch.max_delta_mw,
     backend: payload.dispatch.backend,
     note: payload.dispatch.note,
+    active_controllers: payload.dispatch.active_controllers,
+    controller_trace: payload.dispatch.controller_trace,
+    dispatch_sources: payload.dispatch.dispatch_sources,
   })
 }
 
@@ -194,7 +199,99 @@ function normalizeSnapshot(raw: Partial<TelemetrySnapshot>): TelemetrySnapshot {
     max_delta_mw: Number(raw.max_delta_mw ?? 0),
     backend: raw.backend ?? 'local demo',
     note: raw.note ?? '',
+    active_controllers: normalizeControllers(raw.active_controllers, mode),
+    controller_trace: normalizeControllerTrace(raw.controller_trace, mode),
+    dispatch_sources: normalizeDispatchSources(raw.dispatch_sources, mode),
   }
+}
+
+function normalizeControllers(raw: string[] | undefined, mode: OperatingMode) {
+  if (Array.isArray(raw) && raw.length > 0) {
+    return raw.map(String)
+  }
+  return [baseControllerName(mode)]
+}
+
+function normalizeControllerTrace(
+  raw: ControllerTraceEntry[] | undefined,
+  mode: OperatingMode,
+): ControllerTraceEntry[] {
+  if (Array.isArray(raw) && raw.length > 0) {
+    return raw.map((entry) => ({
+      controller: String(entry.controller ?? baseControllerName(mode)),
+      controller_key: String(entry.controller_key ?? baseControllerKey(mode)),
+      priority: Number(entry.priority ?? 10),
+      action: String(entry.action ?? 'set'),
+      reason: String(entry.reason ?? 'legacy telemetry'),
+      nodes: Array.isArray(entry.nodes) ? entry.nodes.map(Number) : [1, 2, 3, 4, 5],
+    }))
+  }
+  return [
+    {
+      controller: baseControllerName(mode),
+      controller_key: baseControllerKey(mode),
+      priority: 10,
+      action: 'set',
+      reason: 'offline or legacy telemetry fallback',
+      nodes: [1, 2, 3, 4, 5],
+    },
+  ]
+}
+
+function normalizeDispatchSources(
+  raw: NodeDispatchSource[] | undefined,
+  mode: OperatingMode,
+): NodeDispatchSource[] {
+  if (Array.isArray(raw) && raw.length > 0) {
+    return Array.from({ length: 5 }, (_, index) => {
+      const source = raw.find((item) => Number(item.node) === index + 1) ?? raw[index]
+      return normalizeDispatchSource(source, index + 1, mode)
+    })
+  }
+  return Array.from({ length: 5 }, (_, index) =>
+    normalizeDispatchSource(undefined, index + 1, mode),
+  )
+}
+
+function normalizeDispatchSource(
+  raw: Partial<NodeDispatchSource> | undefined,
+  node: number,
+  mode: OperatingMode,
+): NodeDispatchSource {
+  return {
+    node,
+    controller: String(raw?.controller ?? baseControllerName(mode)),
+    controller_key: String(raw?.controller_key ?? baseControllerKey(mode)),
+    priority: Number(raw?.priority ?? 10),
+    reason: String(raw?.reason ?? 'legacy telemetry fallback'),
+    overridden: Boolean(raw?.overridden ?? false),
+    previous_controller: raw?.previous_controller ?? null,
+    previous_value_mw:
+      raw?.previous_value_mw === null || raw?.previous_value_mw === undefined
+        ? null
+        : Number(raw.previous_value_mw),
+    override_reason: raw?.override_reason ?? null,
+  }
+}
+
+function baseControllerName(mode: OperatingMode) {
+  if (mode === 'global_cooperative') {
+    return '经济调度控制器'
+  }
+  if (mode === 'local_cluster') {
+    return '局部聚类协调控制器'
+  }
+  return '应急保守控制器'
+}
+
+function baseControllerKey(mode: OperatingMode) {
+  if (mode === 'global_cooperative') {
+    return 'economic_dispatch'
+  }
+  if (mode === 'local_cluster') {
+    return 'local_cluster_coordination'
+  }
+  return 'emergency_conservative'
 }
 
 function normalizeLinks(raw?: LinkMap): LinkMap {
@@ -335,6 +432,56 @@ function makeSyntheticSnapshot(elapsed: number): TelemetrySnapshot {
     max_delta_mw: 2.5,
     backend: 'offline demo',
     note: `demand=${(58 + Math.sin(elapsed / 11) * 8).toFixed(2)}MW`,
+    active_controllers:
+      elapsed > 34 && elapsed < 58
+        ? [baseControllerName(mode), '储能优先充电控制器']
+        : [baseControllerName(mode)],
+    controller_trace: [
+      {
+        controller: baseControllerName(mode),
+        controller_key: baseControllerKey(mode),
+        priority: 10,
+        action: 'set',
+        reason: 'offline demo base controller',
+        nodes: [1, 2, 3, 4, 5],
+      },
+      ...(elapsed > 34 && elapsed < 58
+        ? [
+            {
+              controller: '储能优先充电控制器',
+              controller_key: 'storage_priority_charge',
+              priority: 90,
+              action: 'override',
+              reason: 'offline demo renewable surplus charges BESS',
+              nodes: [5],
+            },
+          ]
+        : []),
+    ],
+    dispatch_sources: Array.from({ length: 5 }, (_, index) => ({
+      node: index + 1,
+      controller:
+        index === 4 && elapsed > 34 && elapsed < 58
+          ? '储能优先充电控制器'
+          : baseControllerName(mode),
+      controller_key:
+        index === 4 && elapsed > 34 && elapsed < 58
+          ? 'storage_priority_charge'
+          : baseControllerKey(mode),
+      priority: index === 4 && elapsed > 34 && elapsed < 58 ? 90 : 10,
+      reason:
+        index === 4 && elapsed > 34 && elapsed < 58
+          ? '供大于求且SOC低于目标，覆盖BESS为充电'
+          : 'offline demo base controller',
+      overridden: index === 4 && elapsed > 34 && elapsed < 58,
+      previous_controller:
+        index === 4 && elapsed > 34 && elapsed < 58 ? baseControllerName(mode) : null,
+      previous_value_mw: index === 4 && elapsed > 34 && elapsed < 58 ? bess : null,
+      override_reason:
+        index === 4 && elapsed > 34 && elapsed < 58
+          ? '储能优先充电控制器覆盖基础调度'
+          : null,
+    })),
   }
 }
 

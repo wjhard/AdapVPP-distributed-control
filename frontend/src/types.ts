@@ -17,6 +17,30 @@ export type DispatchPayload = {
   max_delta_mw: number
   backend: string
   note: string
+  active_controllers?: string[]
+  controller_trace?: ControllerTraceEntry[]
+  dispatch_sources?: NodeDispatchSource[]
+}
+
+export type ControllerTraceEntry = {
+  controller: string
+  controller_key: string
+  priority: number
+  action: string
+  reason: string
+  nodes: number[]
+}
+
+export type NodeDispatchSource = {
+  node: number
+  controller: string
+  controller_key: string
+  priority: number
+  reason: string
+  overridden: boolean
+  previous_controller?: string | null
+  previous_value_mw?: number | null
+  override_reason?: string | null
 }
 
 export type ForecastPayload = {
@@ -63,6 +87,9 @@ export type TelemetrySnapshot = {
   max_delta_mw: number
   backend: string
   note: string
+  active_controllers: string[]
+  controller_trace: ControllerTraceEntry[]
+  dispatch_sources: NodeDispatchSource[]
 }
 
 export type NodeInfo = {
