@@ -213,6 +213,12 @@ class ManualControlManager:
             "recent_events": self.recent_events[-20:],
         }
 
+    def reset_runtime_state(self) -> None:
+        self.pending.clear()
+        self.active_link_faults.clear()
+        self.active_storage_charge = None
+        self.active_forced_mode = None
+
     def _expire_pending(self, now: float) -> None:
         expired = [item for item in self.pending.values() if item.expires_at_monotonic <= now]
         for item in expired:

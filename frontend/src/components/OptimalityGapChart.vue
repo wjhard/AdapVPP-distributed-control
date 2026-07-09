@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { Maximize2, X } from '@lucide/vue'
 import type { EChartsOption } from 'echarts'
-import { computed, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import VChart from 'vue-echarts'
 import type { OptimalityGapRow } from '../types'
 
@@ -9,12 +10,12 @@ const props = defineProps<{
 }>()
 
 const ALL_SCENARIOS = '全部场景'
+const scenarioColors = ['#38f3ff', '#29e6bb', '#f5c84c', '#b38cff']
 
+const detailOpen = ref(false)
 const selectedScenario = ref<string | null>(null)
 const tableOpen = ref(false)
 const tableScenario = ref(ALL_SCENARIOS)
-
-const scenarioColors = ['#38f3ff', '#29e6bb', '#f5c84c', '#b38cff']
 
 const groupedRows = computed(() => {
   const groups = new Map<string, OptimalityGapRow[]>()
@@ -43,10 +44,36 @@ const tableRows = computed(() => {
     tableScenario.value === ALL_SCENARIOS
       ? props.rows
       : props.rows.filter((row) => row.Scenario === tableScenario.value)
-  return source.slice(0, 220)
+  return source.slice(0, 600)
 })
 
-const option = computed<EChartsOption>(() => ({
+const overviewOption = computed<EChartsOption>(() => ({
+  color: scenarioColors,
+  animation: false,
+  grid: { left: 8, right: 8, top: 8, bottom: 8 },
+  xAxis: {
+    type: 'value',
+    show: false,
+  },
+  yAxis: {
+    type: 'log',
+    min: 1e-12,
+    show: false,
+  },
+  series: groupedRows.value.map(([scenario, rows], index) => ({
+    name: scenario,
+    type: 'line',
+    smooth: true,
+    symbol: 'none',
+    lineStyle: { width: 2, color: scenarioColors[index % scenarioColors.length] },
+    data: rows.map((row) => [
+      Number(row.Iteration),
+      Math.max(Number(row.OptimalityGapForLog), 1e-12),
+    ]),
+  })),
+}))
+
+const detailOption = computed<EChartsOption>(() => ({
   color: scenarioColors,
   tooltip: {
     trigger: 'axis',
@@ -61,9 +88,9 @@ const option = computed<EChartsOption>(() => ({
           }
           return [
             `<strong>${raw.Scenario}</strong>`,
-            `迭代 k=${raw.Iteration}`,
-            `距离理论最优解 ${formatNumber(raw.DistanceToPStarMW)} MW`,
-            `optimality gap ${formatNumber(raw.OptimalityGap)}`,
+            `iteration k=${raw.Iteration}`,
+            `distance to P*: ${formatNumber(raw.DistanceToPStarMW)} MW`,
+            `optimality gap: ${formatNumber(raw.OptimalityGap)}`,
           ].join('<br/>')
         })
         .join('<br/><br/>')
@@ -71,24 +98,24 @@ const option = computed<EChartsOption>(() => ({
   },
   legend: {
     top: 0,
-    textStyle: { color: '#b8d7e8', fontSize: 10 },
-    itemWidth: 12,
-    itemHeight: 7,
+    textStyle: { color: '#c9e7f2', fontSize: 13 },
+    itemWidth: 16,
+    itemHeight: 8,
   },
-  grid: { left: 54, right: 14, top: 34, bottom: 34 },
+  grid: { left: 76, right: 24, top: 48, bottom: 54 },
   xAxis: {
     type: 'value',
-    name: '迭代',
-    nameTextStyle: { color: '#7fa7ba' },
-    axisLabel: { color: '#7fa7ba', fontSize: 10 },
+    name: 'Iteration',
+    nameTextStyle: { color: '#9ec4d0', fontSize: 13 },
+    axisLabel: { color: '#a8cbd8', fontSize: 12 },
     splitLine: { lineStyle: { color: 'rgba(102, 214, 255, 0.1)' } },
   },
   yAxis: {
     type: 'log',
-    name: 'optimality gap',
+    name: 'Optimality gap',
     min: 1e-12,
-    nameTextStyle: { color: '#7fa7ba' },
-    axisLabel: { color: '#7fa7ba', fontSize: 10 },
+    nameTextStyle: { color: '#9ec4d0', fontSize: 13 },
+    axisLabel: { color: '#a8cbd8', fontSize: 12 },
     splitLine: { lineStyle: { color: 'rgba(102, 214, 255, 0.1)' } },
   },
   series: visibleGroups.value.map(([scenario, rows], index) => ({
@@ -96,7 +123,7 @@ const option = computed<EChartsOption>(() => ({
     type: 'line',
     smooth: true,
     symbol: 'none',
-    lineStyle: { width: 2.4, color: scenarioColors[index % scenarioColors.length] },
+    lineStyle: { width: 3, color: scenarioColors[index % scenarioColors.length] },
     emphasis: { focus: 'series' },
     data: rows.map((row) => ({
       value: [Number(row.Iteration), Math.max(Number(row.OptimalityGapForLog), 1e-12)],
@@ -105,13 +132,12 @@ const option = computed<EChartsOption>(() => ({
   })),
 }))
 
-function handleChartClick(params: any) {
-  const name = String(params?.seriesName ?? '')
-  if (!name) {
-    return
-  }
-  selectedScenario.value = selectedScenario.value === name ? null : name
-  tableScenario.value = selectedScenario.value ?? ALL_SCENARIOS
+function openDetail() {
+  detailOpen.value = true
+}
+
+function closeDetail() {
+  detailOpen.value = false
 }
 
 function setScenario(scenario: string | null) {
@@ -129,60 +155,102 @@ function formatNumber(value: string | number) {
   }
   return num.toFixed(6)
 }
+
+function onKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && detailOpen.value) {
+    closeDetail()
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', onKeydown)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKeydown)
+})
 </script>
 
 <template>
-  <div class="optimality-gap">
-    <div class="gap-panel__title">
-      <span>最优性间隙收敛曲线</span>
-      <em>点击曲线聚焦</em>
-    </div>
-
-    <div class="optimality-gap__toolbar">
-      <button
-        v-for="scenario in scenarios"
-        :key="scenario"
-        :class="{ 'is-active': selectedScenario === scenario }"
-        type="button"
-        @click="setScenario(selectedScenario === scenario ? null : scenario)"
-      >
-        {{ scenario }}
-      </button>
-      <button type="button" @click="setScenario(null)">全部</button>
-    </div>
-
-    <VChart class="chart optimality-gap__chart" :option="option" autoresize @click="handleChartClick" />
-
-    <button class="optimality-gap__table-toggle" type="button" @click="tableOpen = !tableOpen">
-      {{ tableOpen ? '收起原始数据表' : '展开原始数据表' }}
+  <div class="optimality-gap-overview">
+    <button class="optimality-gap-overview__hit" type="button" @click="openDetail">
+      <VChart class="chart optimality-gap-overview__chart" :option="overviewOption" autoresize />
+      <span class="optimality-gap-overview__cta">
+        <Maximize2 :size="14" />
+        查看详情
+      </span>
     </button>
-
-    <div v-if="tableOpen" class="optimality-gap__table-wrap">
-      <label>
-        场景筛选
-        <select v-model="tableScenario">
-          <option>{{ ALL_SCENARIOS }}</option>
-          <option v-for="scenario in scenarios" :key="scenario">{{ scenario }}</option>
-        </select>
-      </label>
-      <table>
-        <thead>
-          <tr>
-            <th>场景</th>
-            <th>迭代</th>
-            <th>距离/MW</th>
-            <th>Gap</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="row in tableRows" :key="`${row.Scenario}-${row.Iteration}`">
-            <td>{{ row.Scenario }}</td>
-            <td>{{ row.Iteration }}</td>
-            <td>{{ formatNumber(row.DistanceToPStarMW) }}</td>
-            <td>{{ formatNumber(row.OptimalityGap) }}</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    <p>四场景均收敛至理论最优，点击查看完整轨迹。</p>
   </div>
+
+  <Teleport to="body">
+    <div v-if="detailOpen" class="optimality-gap-modal" role="dialog" aria-modal="true">
+      <div class="optimality-gap-modal__panel">
+        <header class="optimality-gap-modal__header">
+          <div>
+            <strong>最优性间隙收敛详情</strong>
+            <span>Overview first, zoom and filter, then details on demand.</span>
+          </div>
+          <button type="button" class="optimality-gap-modal__close" @click="closeDetail">
+            <X :size="20" />
+            返回总览
+          </button>
+        </header>
+
+        <div class="optimality-gap-modal__toolbar">
+          <button
+            :class="{ 'is-active': selectedScenario === null }"
+            type="button"
+            @click="setScenario(null)"
+          >
+            全部场景
+          </button>
+          <button
+            v-for="scenario in scenarios"
+            :key="scenario"
+            :class="{ 'is-active': selectedScenario === scenario }"
+            type="button"
+            @click="setScenario(selectedScenario === scenario ? null : scenario)"
+          >
+            {{ scenario }}
+          </button>
+        </div>
+
+        <VChart class="chart optimality-gap-modal__chart" :option="detailOption" autoresize />
+
+        <section class="optimality-gap-modal__table">
+          <button type="button" @click="tableOpen = !tableOpen">
+            {{ tableOpen ? '收起原始数据表' : '展开原始数据表' }}
+          </button>
+          <div v-if="tableOpen" class="optimality-gap-modal__table-wrap">
+            <label>
+              场景筛选
+              <select v-model="tableScenario">
+                <option>{{ ALL_SCENARIOS }}</option>
+                <option v-for="scenario in scenarios" :key="scenario">{{ scenario }}</option>
+              </select>
+            </label>
+            <table>
+              <thead>
+                <tr>
+                  <th>场景</th>
+                  <th>迭代</th>
+                  <th>距离 P*/MW</th>
+                  <th>Optimality gap</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in tableRows" :key="`${row.Scenario}-${row.Iteration}`">
+                  <td>{{ row.Scenario }}</td>
+                  <td>{{ row.Iteration }}</td>
+                  <td>{{ formatNumber(row.DistanceToPStarMW) }}</td>
+                  <td>{{ formatNumber(row.OptimalityGap) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </div>
+  </Teleport>
 </template>

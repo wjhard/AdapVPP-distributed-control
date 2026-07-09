@@ -16,6 +16,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--host", default="127.0.0.1", help="WebSocket host.")
     parser.add_argument("--port", type=int, default=8765, help="WebSocket port.")
     parser.add_argument("--toxiproxy-api-port", type=int, default=8474, help="Toxiproxy management API port.")
+    parser.add_argument(
+        "--loop",
+        action="store_true",
+        help="Restart the demo cycle indefinitely while keeping WebSocket and Toxiproxy connections alive.",
+    )
     parser.add_argument("--force-bad-link", default=None, help="Optional link key such as 1-2 to force into Bad state.")
     parser.add_argument("--force-bad-at", type=float, default=35.0, help="Elapsed seconds when manual Bad link injection starts.")
     parser.add_argument("--force-bad-duration", type=float, default=12.0, help="Manual Bad link injection duration in seconds.")
@@ -60,7 +65,7 @@ async def main() -> None:
         security_incident_at_s=args.security_incident_at,
         security_incident_node=args.security_incident_node,
     )
-    await demo.run()
+    await demo.run(loop=args.loop)
 
 
 if __name__ == "__main__":

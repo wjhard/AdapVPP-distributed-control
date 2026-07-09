@@ -85,7 +85,7 @@ class AdaptiveVppDemo:
         )
         self.visited_modes: List[OperatingMode] = [OperatingMode.GLOBAL]
 
-    async def run(self) -> None:
+    async def run(self, loop: bool = False) -> None:
         await self.websocket.start()
         if self.websocket.enabled:
             self.run_logger.info(f"WEBSOCKET_STATUS enabled ws://{self.websocket.host}:{self.websocket.port}")
@@ -94,73 +94,84 @@ class AdaptiveVppDemo:
         self.run_logger.backend_status(self.backend.label)
         await self._start_link_quality_source()
 
-        link_diagnostics: List[str] = []
         try:
             try:
-                total_steps = int(self.duration_s / self.interval_s) + 1
-                for step in range(total_steps):
-                    elapsed_s = min(step * self.interval_s, self.duration_s)
-                    self.current_elapsed_s = elapsed_s
-                    quality = await self._sample_quality(elapsed_s)
-                    quality = self.manual_control.apply_quality_overrides(quality)
-                    auto_decision = self.state_machine.update(
-                        elapsed_s,
-                        quality.average_delay_ms,
-                        quality.max_loss_rate,
-                    )
-                    decision = self._apply_manual_mode_override(elapsed_s, auto_decision)
-                    if decision.changed:
-                        self.visited_modes.append(decision.mode)
-
-                    clusters = self._clusters_for_mode(decision.mode, quality)
-                    actual_resource = self.resources.sample(elapsed_s, self.duration_s)
-                    forecast = self.forecaster.update(elapsed_s, actual_resource)
-                    dispatch_resource = self.forecaster.forecast_resource(actual_resource, forecast)
-                    self._maybe_inject_formula_security_incident(elapsed_s)
-                    forecast_pmax = self.security.apply_trust_weights(
-                        self.forecaster.forecast_pmax(forecast)
-                    )
-                    dispatch = self.dispatcher.dispatch(
-                        decision.mode,
-                        quality,
-                        clusters,
-                        dispatch_resource,
-                        self.interval_s,
-                        renewable_pmax=forecast_pmax,
-                    )
-
-                    if decision.changed:
-                        self.run_logger.transition(decision, quality, dispatch)
-                    security_snapshot = self.security.snapshot()
-                    manual_snapshot = self.manual_control.snapshot(elapsed_s)
-                    self.run_logger.snapshot(
-                        quality,
-                        decision,
-                        dispatch,
-                        forecast,
-                        security_snapshot,
-                        manual_snapshot,
-                    )
-                    await self.websocket.broadcast(
-                        self._payload(
-                            quality,
-                            decision,
-                            dispatch,
-                            forecast,
-                            security_snapshot,
-                            manual_snapshot,
-                        )
-                    )
-
-                    if self.realtime and step < total_steps - 1:
-                        await asyncio.sleep(self.interval_s)
+                cycle_index = 0
+                while True:
+                    if cycle_index > 0:
+                        self._reset_cycle_state()
+                    self.run_logger.info(f"DEMO_CYCLE_START index={cycle_index} loop={loop}")
+                    await self._run_cycle()
+                    self._emit_cycle_summary()
+                    cycle_index += 1
+                    if not loop:
+                        break
             finally:
                 await self.websocket.stop()
-
-            link_diagnostics = self.link_quality.diagnostic_lines()
         finally:
             await self._stop_link_quality_source()
 
+    async def _run_cycle(self) -> None:
+        total_steps = int(self.duration_s / self.interval_s) + 1
+        for step in range(total_steps):
+            elapsed_s = min(step * self.interval_s, self.duration_s)
+            self.current_elapsed_s = elapsed_s
+            quality = await self._sample_quality(elapsed_s)
+            quality = self.manual_control.apply_quality_overrides(quality)
+            auto_decision = self.state_machine.update(
+                elapsed_s,
+                quality.average_delay_ms,
+                quality.max_loss_rate,
+            )
+            decision = self._apply_manual_mode_override(elapsed_s, auto_decision)
+            if decision.changed:
+                self.visited_modes.append(decision.mode)
+
+            clusters = self._clusters_for_mode(decision.mode, quality)
+            actual_resource = self.resources.sample(elapsed_s, self.duration_s)
+            forecast = self.forecaster.update(elapsed_s, actual_resource)
+            dispatch_resource = self.forecaster.forecast_resource(actual_resource, forecast)
+            self._maybe_inject_formula_security_incident(elapsed_s)
+            forecast_pmax = self.security.apply_trust_weights(
+                self.forecaster.forecast_pmax(forecast)
+            )
+            dispatch = self.dispatcher.dispatch(
+                decision.mode,
+                quality,
+                clusters,
+                dispatch_resource,
+                self.interval_s,
+                renewable_pmax=forecast_pmax,
+            )
+
+            if decision.changed:
+                self.run_logger.transition(decision, quality, dispatch)
+            security_snapshot = self.security.snapshot()
+            manual_snapshot = self.manual_control.snapshot(elapsed_s)
+            self.run_logger.snapshot(
+                quality,
+                decision,
+                dispatch,
+                forecast,
+                security_snapshot,
+                manual_snapshot,
+            )
+            await self.websocket.broadcast(
+                self._payload(
+                    quality,
+                    decision,
+                    dispatch,
+                    forecast,
+                    security_snapshot,
+                    manual_snapshot,
+                )
+            )
+
+            if self.realtime and step < total_steps - 1:
+                await asyncio.sleep(self.interval_s)
+
+    def _emit_cycle_summary(self) -> None:
+        link_diagnostics = self.link_quality.diagnostic_lines()
         self.run_logger.info(
             "DEMO_COMPLETE visited_modes="
             + "->".join(mode.name for mode in self.visited_modes)
@@ -178,6 +189,17 @@ class AdaptiveVppDemo:
         print("\n=== Zero-trust security diagnostics ===")
         for line in self.security.diagnostic_lines():
             print(line)
+
+    def _reset_cycle_state(self) -> None:
+        reset = getattr(self.link_quality, "reset", None)
+        if callable(reset):
+            reset()
+        self.state_machine = AdaptiveStateMachine(min_dwell_s=3.0)
+        self._formula_security_incident_sent = False
+        self.current_elapsed_s = 0.0
+        self.effective_mode = OperatingMode.GLOBAL
+        self.visited_modes = [OperatingMode.GLOBAL]
+        self.manual_control.reset_runtime_state()
 
     async def _start_link_quality_source(self) -> None:
         start = getattr(self.link_quality, "start", None)

@@ -132,6 +132,9 @@ class RollingProbeStats:
     def add(self, outcome: ProbeOutcome) -> None:
         self._items.append(outcome)
 
+    def reset(self) -> None:
+        self._items.clear()
+
     def metric(
         self,
         src: int,
@@ -328,6 +331,14 @@ class ToxiproxyMeasuredNetwork:
             selected = self.evidence_events[:24]
         lines.extend(f"  {event}" for event in selected[:24])
         return lines
+
+    def reset_measurements(self) -> None:
+        for stats in self.stats.values():
+            stats.reset()
+        self.evidence_events = []
+        self._toxic_update_events = 0
+        self.seq = 0
+        self._security_incident_sent = False
 
     async def _probe(self, endpoint: ProxyEndpoint, elapsed_s: float, desired: LinkMetric) -> ProbeOutcome:
         self.seq += 1
@@ -592,6 +603,11 @@ class ToxiproxyLinkQualitySource:
             *self.network.diagnostic_lines(),
         ]
         return lines
+
+    def reset(self) -> None:
+        self.model.reset()
+        self.network.reset_measurements()
+        self.runtime_bad_overrides.clear()
 
     def _apply_manual_bad_override(self, snapshot: QualitySnapshot) -> QualitySnapshot:
         active_links = set()

@@ -15,6 +15,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--port", type=int, default=8765, help="WebSocket port.")
     parser.add_argument("--fast", action="store_true", help="Run simulated time without real-time sleeping.")
     parser.add_argument(
+        "--loop",
+        action="store_true",
+        help="Restart the demo cycle indefinitely while keeping WebSocket and Toxiproxy connections alive.",
+    )
+    parser.add_argument(
         "--formula",
         action="store_true",
         help="Use the formula-only Gilbert-Elliott telemetry source instead of real Toxiproxy TCP probes.",
@@ -64,7 +69,7 @@ async def main() -> None:
         security_incident_at_s=args.security_incident_at,
         security_incident_node=args.security_incident_node,
     )
-    await demo.run()
+    await demo.run(loop=args.loop)
 
 
 if __name__ == "__main__":

@@ -8,9 +8,12 @@
 .\.venv\Scripts\activate
 cd python
 python run_adaptive_demo.py --duration 120 --interval 1 --host 127.0.0.1 --port 8765
+python run_adaptive_demo.py --duration 120 --interval 1 --host 127.0.0.1 --port 8765 --loop
 ```
 
 `run_adaptive_demo.py` 默认使用 `run_toxiproxy_adaptive_demo.py` 同一套 Toxiproxy 真实 TCP 探测路径产生 WebSocket 数据；如需退回纯公式仿真数据源，可追加 `--formula`。
+
+日常联动前端演示建议加 `--loop`，脚本会在每个 120 秒周期结束后自动重置状态机和链路质量模型并进入下一轮，WebSocket 与 Toxiproxy 连接保持在线，避免前端中途掉线切换到离线 DEMO 模式。
 
 前端联动演示时不要加 `--fast`，否则 120 秒演示会快速跑完。
 

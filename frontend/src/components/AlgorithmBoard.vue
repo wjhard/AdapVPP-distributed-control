@@ -106,9 +106,6 @@ function money(value: number) {
 
     <div class="algorithm-board__gap-panel">
       <OptimalityGapChart :rows="optimalityGap" />
-      <p class="algorithm-board__methodology">
-        本方案采用与国际主流分布式优化文献一致的最优性验证方法：将分布式ADMM迭代过程中每一步的解，与通过独立凸优化求解器计算得到的理论最优解进行逐次比对，追踪最优性间隙的完整收敛轨迹，而非仅比较最终结果，确保收敛过程本身具备数学上的可验证性。
-      </p>
     </div>
 
     <div class="algorithm-board__cards">
