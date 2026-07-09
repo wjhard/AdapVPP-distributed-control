@@ -90,6 +90,57 @@ export type SecurityPayload = {
   recent_events: SecurityEventPayload[]
 }
 
+export type ManualPendingOperation = {
+  request_id: string
+  operation: string
+  target_key: string
+  target: Record<string, unknown>
+  selected_at_epoch_ms: number
+  expires_at_epoch_ms: number
+}
+
+export type ManualIntervention = {
+  kind: string
+  target_key: string
+  label: string
+  started_at_elapsed_s: number
+  expires_at_elapsed_s: number
+  metadata: Record<string, unknown>
+}
+
+export type ManualControlEvent = {
+  event_type: string
+  operation: string
+  target_key: string
+  reason: string
+  timestamp_ms: number
+}
+
+export type ManualControlPayload = {
+  select_timeout_s: number
+  pending: ManualPendingOperation[]
+  active_interventions: ManualIntervention[]
+  recent_events: ManualControlEvent[]
+}
+
+export type ManualControlResponse = {
+  message_type: 'manual_control_response'
+  ok: boolean
+  status: string
+  message: string
+  pending?: ManualPendingOperation | null
+  manual_control?: ManualControlPayload
+}
+
+export type ManualControlCommand =
+  | {
+      action: 'select'
+      operation: 'link_fault' | 'storage_charge_test' | 'security_incident' | 'force_mode'
+      target: Record<string, unknown>
+    }
+  | { action: 'cancel'; request_id: string }
+  | { action: 'operate'; request_id: string }
+
 export type TelemetryPayload = {
   elapsed_s: number
   mode: OperatingMode
@@ -101,6 +152,7 @@ export type TelemetryPayload = {
   clusters: number[][]
   forecast?: ForecastPayload
   security?: SecurityPayload
+  manual_control?: ManualControlPayload
   dispatch: DispatchPayload
 }
 
@@ -115,6 +167,7 @@ export type TelemetrySnapshot = {
   clusters: number[][]
   forecast: ForecastPayload
   security: SecurityPayload
+  manual_control: ManualControlPayload
   target_mw: number[]
   command_mw: number[]
   max_delta_mw: number

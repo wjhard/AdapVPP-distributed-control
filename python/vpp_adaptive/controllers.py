@@ -190,6 +190,7 @@ class StoragePriorityChargeController(DispatchController):
         self.soc = initial_soc
         self.surplus_threshold_mw = surplus_threshold_mw
         self.force_test = force_test
+        self.force_test_until_s: float | None = None
         self.capacity_mwh = 60.0
 
     def supports(self, mode: OperatingMode) -> bool:
@@ -197,8 +198,13 @@ class StoragePriorityChargeController(DispatchController):
 
     def run(self, context: ControllerContext, current_target: Sequence[float]) -> ControllerUpdate:
         surplus = context.renewable_surplus_mw
+        runtime_force = (
+            self.force_test_until_s is not None
+            and context.quality.elapsed_s <= self.force_test_until_s
+        )
         should_charge = (
             self.force_test
+            or runtime_force
             or (surplus >= self.surplus_threshold_mw and self.soc < self.target_soc)
         )
         if not should_charge:
@@ -224,7 +230,7 @@ class StoragePriorityChargeController(DispatchController):
         max_extra_charge = min(
             current_bess_mw - context.installed_pmin[4],
             available_headroom,
-            surplus if surplus > 0.0 else (available_headroom if self.force_test else 0.0),
+            surplus if surplus > 0.0 else (available_headroom if self.force_test or runtime_force else 0.0),
         )
         if max_extra_charge <= 1e-6:
             return ControllerUpdate(
@@ -240,7 +246,7 @@ class StoragePriorityChargeController(DispatchController):
             )
 
         desired_bess_mw = current_bess_mw - max_extra_charge
-        if self.force_test and surplus < self.surplus_threshold_mw:
+        if (self.force_test or runtime_force) and surplus < self.surplus_threshold_mw:
             reason = (
                 f"测试强制触发: surplus={surplus:.2f}MW, SOC={self.soc:.1%}<"
                 f"{self.target_soc:.1%}, 覆盖BESS并补足可再生出力验证优先级机制"
@@ -280,6 +286,9 @@ class StoragePriorityChargeController(DispatchController):
             self.soc = min(1.0, self.soc + energy_mwh * 0.95 / self.capacity_mwh)
         elif bess_command_mw > 0.0:
             self.soc = max(0.0, self.soc - energy_mwh / (0.95 * self.capacity_mwh))
+
+    def force_for(self, elapsed_s: float, duration_s: float) -> None:
+        self.force_test_until_s = float(elapsed_s) + max(1.0, float(duration_s))
 
 
 class ControllerManager:
@@ -387,6 +396,9 @@ class ControllerManager:
 
     def observe_command(self, command_mw: Sequence[float], interval_s: float) -> None:
         self.storage_controller.observe_command(command_mw[4], interval_s)
+
+    def force_storage_charge_for(self, elapsed_s: float, duration_s: float) -> None:
+        self.storage_controller.force_for(elapsed_s, duration_s)
 
 
 def rebalance_group(

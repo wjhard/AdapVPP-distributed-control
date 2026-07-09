@@ -9,6 +9,7 @@ from .clustering import ConnectivityClusterer
 from .dispatch import AdaptiveDispatcher
 from .forecasting import ShortTermRenewableForecaster
 from .link_quality import LinkQualitySimulator
+from .manual_control import ManualControlManager
 from .matlab_backend import MatlabDispatchBackend
 from .models import DispatchResult, ForecastSnapshot, MODE_LABELS, OperatingMode, QualitySnapshot, StateDecision
 from .resource_profile import ResourceProfile
@@ -74,7 +75,14 @@ class AdaptiveVppDemo:
             self.backend,
             force_storage_charge_test=force_storage_charge_test,
         )
-        self.websocket = TelemetryWebSocketServer(websocket_host, websocket_port)
+        self.current_elapsed_s = 0.0
+        self.effective_mode = OperatingMode.GLOBAL
+        self.manual_control = ManualControlManager(self.security, self._execute_manual_operation)
+        self.websocket = TelemetryWebSocketServer(
+            websocket_host,
+            websocket_port,
+            on_message=self._handle_websocket_message,
+        )
         self.visited_modes: List[OperatingMode] = [OperatingMode.GLOBAL]
 
     async def run(self) -> None:
@@ -92,8 +100,15 @@ class AdaptiveVppDemo:
                 total_steps = int(self.duration_s / self.interval_s) + 1
                 for step in range(total_steps):
                     elapsed_s = min(step * self.interval_s, self.duration_s)
+                    self.current_elapsed_s = elapsed_s
                     quality = await self._sample_quality(elapsed_s)
-                    decision = self.state_machine.update(elapsed_s, quality.average_delay_ms, quality.max_loss_rate)
+                    quality = self.manual_control.apply_quality_overrides(quality)
+                    auto_decision = self.state_machine.update(
+                        elapsed_s,
+                        quality.average_delay_ms,
+                        quality.max_loss_rate,
+                    )
+                    decision = self._apply_manual_mode_override(elapsed_s, auto_decision)
                     if decision.changed:
                         self.visited_modes.append(decision.mode)
 
@@ -116,9 +131,25 @@ class AdaptiveVppDemo:
 
                     if decision.changed:
                         self.run_logger.transition(decision, quality, dispatch)
-                    self.run_logger.snapshot(quality, decision, dispatch, forecast, self.security.snapshot())
+                    security_snapshot = self.security.snapshot()
+                    manual_snapshot = self.manual_control.snapshot(elapsed_s)
+                    self.run_logger.snapshot(
+                        quality,
+                        decision,
+                        dispatch,
+                        forecast,
+                        security_snapshot,
+                        manual_snapshot,
+                    )
                     await self.websocket.broadcast(
-                        self._payload(quality, decision, dispatch, forecast, self.security.snapshot())
+                        self._payload(
+                            quality,
+                            decision,
+                            dispatch,
+                            forecast,
+                            security_snapshot,
+                            manual_snapshot,
+                        )
                     )
 
                     if self.realtime and step < total_steps - 1:
@@ -170,6 +201,30 @@ class AdaptiveVppDemo:
             return await result
         return result
 
+    def _apply_manual_mode_override(
+        self,
+        elapsed_s: float,
+        auto_decision: StateDecision,
+    ) -> StateDecision:
+        forced_mode = self.manual_control.forced_mode(elapsed_s)
+        next_mode = forced_mode or auto_decision.mode
+        changed = next_mode != self.effective_mode
+        if forced_mode is not None:
+            reason = f"manual_force_mode:{forced_mode.value}"
+        elif changed:
+            reason = f"manual_force_released:auto_mode={auto_decision.mode.value}"
+        else:
+            reason = auto_decision.reason
+        decision = StateDecision(
+            previous_mode=self.effective_mode,
+            mode=next_mode,
+            changed=changed,
+            reason=reason,
+            dwell_s=auto_decision.dwell_s,
+        )
+        self.effective_mode = next_mode
+        return decision
+
     def _clusters_for_mode(self, mode: OperatingMode, quality: QualitySnapshot) -> List[List[int]]:
         if mode == OperatingMode.GLOBAL:
             return [[1, 2, 3, 4, 5]]
@@ -192,6 +247,69 @@ class AdaptiveVppDemo:
             elapsed_s,
         )
 
+    def _handle_websocket_message(self, message: Dict[str, object]) -> Dict[str, object]:
+        if message.get("message_type") != "manual_control":
+            return {
+                "message_type": "manual_control_response",
+                "ok": False,
+                "status": "rejected",
+                "message": "unsupported websocket command type",
+                "manual_control": self.manual_control.snapshot(self.current_elapsed_s),
+            }
+        return self.manual_control.handle_message(message)
+
+    def _execute_manual_operation(self, operation: str, target: Dict[str, object]) -> Dict[str, object]:
+        try:
+            if operation == "link_fault":
+                link_key = str(target.get("link_key", ""))
+                duration_s = float(target.get("duration_s", 20.0))
+                self.manual_control.activate_link_fault(link_key, duration_s, self.current_elapsed_s)
+                force_runtime = getattr(self.link_quality, "force_bad_link_runtime", None)
+                if callable(force_runtime):
+                    force_runtime(link_key, duration_s, self.current_elapsed_s)
+                return {
+                    "ok": True,
+                    "message": f"link fault active: {link_key}, duration={duration_s:.1f}s",
+                }
+
+            if operation == "storage_charge_test":
+                duration_s = float(target.get("duration_s", 15.0))
+                self.manual_control.activate_storage_charge(duration_s, self.current_elapsed_s)
+                self.dispatcher.controller_manager.force_storage_charge_for(
+                    self.current_elapsed_s,
+                    duration_s,
+                )
+                return {
+                    "ok": True,
+                    "message": f"storage priority charge test active for {duration_s:.1f}s",
+                }
+
+            if operation == "security_incident":
+                node = int(target.get("node", 3))
+                kind = str(target.get("kind", "forged"))
+                inject_runtime = getattr(self.link_quality, "inject_security_incident_runtime", None)
+                if callable(inject_runtime):
+                    inject_runtime(kind, node, self.current_elapsed_s)
+                else:
+                    self.security.simulate_formula_incident(kind, node, self.current_elapsed_s)
+                return {
+                    "ok": True,
+                    "message": f"security incident injected: kind={kind}, node={node}",
+                }
+
+            if operation == "force_mode":
+                mode = OperatingMode(str(target.get("mode", OperatingMode.GLOBAL.value)))
+                duration_s = float(target.get("duration_s", 30.0))
+                self.manual_control.activate_forced_mode(mode, duration_s, self.current_elapsed_s)
+                return {
+                    "ok": True,
+                    "message": f"mode force active: {mode.value}, duration={duration_s:.1f}s",
+                }
+        except Exception as exc:
+            return {"ok": False, "message": f"manual operation failed: {exc}"}
+
+        return {"ok": False, "message": f"unknown manual operation: {operation}"}
+
     @staticmethod
     def _payload(
         quality: QualitySnapshot,
@@ -199,6 +317,7 @@ class AdaptiveVppDemo:
         dispatch: DispatchResult,
         forecast: ForecastSnapshot,
         security: Dict[str, object],
+        manual_control: Dict[str, object],
     ) -> Dict[str, object]:
         return {
             "elapsed_s": round(quality.elapsed_s, 3),
@@ -210,6 +329,7 @@ class AdaptiveVppDemo:
             "links": quality.compact_links(),
             "clusters": dispatch.clusters,
             "security": security,
+            "manual_control": manual_control,
             "forecast": {
                 "method": forecast.method,
                 "horizon_minutes": round(forecast.horizon_minutes, 3),

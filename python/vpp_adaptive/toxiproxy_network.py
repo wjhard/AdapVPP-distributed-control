@@ -546,6 +546,7 @@ class ToxiproxyLinkQualitySource:
         self.force_bad_link = force_bad_link
         self.force_bad_start_s = force_bad_start_s
         self.force_bad_end_s = force_bad_start_s + force_bad_duration_s
+        self.runtime_bad_overrides: Dict[str, float] = {}
         self.version = "unknown"
         self.log: LogCallback | None = None
 
@@ -565,6 +566,25 @@ class ToxiproxyLinkQualitySource:
         desired = self._apply_manual_bad_override(desired)
         return await self.network.apply_and_measure(elapsed_s, desired)
 
+    def force_bad_link_runtime(self, link_key: str, duration_s: float, elapsed_s: float) -> None:
+        self.runtime_bad_overrides[link_key] = elapsed_s + max(1.0, float(duration_s))
+        if self.log is not None:
+            self.log(
+                "TOXIPROXY_RUNTIME_BAD_LINK_SELECTED "
+                f"link={link_key} elapsed={elapsed_s:.1f}s duration={duration_s:.1f}s"
+            )
+
+    def inject_security_incident_runtime(self, kind: str, node: int, elapsed_s: float) -> None:
+        self.network.security_incident = kind
+        self.network.security_incident_node = node
+        self.network.security_incident_at_s = elapsed_s
+        self.network._security_incident_sent = False
+        if self.log is not None:
+            self.log(
+                "TOXIPROXY_RUNTIME_SECURITY_INCIDENT "
+                f"kind={kind} node={node} elapsed={elapsed_s:.1f}s"
+            )
+
     def diagnostic_lines(self) -> List[str]:
         lines = [
             "LINK_MODEL Gilbert-Elliott controls Toxiproxy toxics; telemetry uses measured TCP probes",
@@ -574,29 +594,49 @@ class ToxiproxyLinkQualitySource:
         return lines
 
     def _apply_manual_bad_override(self, snapshot: QualitySnapshot) -> QualitySnapshot:
-        if not self.force_bad_link:
-            return snapshot
-        if not (self.force_bad_start_s <= snapshot.elapsed_s <= self.force_bad_end_s):
-            return snapshot
-        metric = snapshot.links.get(self.force_bad_link)
-        if metric is None:
+        active_links = set()
+        if self.force_bad_link and self.force_bad_start_s <= snapshot.elapsed_s <= self.force_bad_end_s:
+            active_links.add(self.force_bad_link)
+
+        expired = [
+            link_key
+            for link_key, end_s in self.runtime_bad_overrides.items()
+            if end_s <= snapshot.elapsed_s
+        ]
+        for link_key in expired:
+            self.runtime_bad_overrides.pop(link_key, None)
+        active_links.update(self.runtime_bad_overrides)
+
+        if not active_links:
             return snapshot
 
         links = dict(snapshot.links)
-        links[self.force_bad_link] = LinkMetric(
-            metric.src,
-            metric.dst,
-            delay_ms=max(metric.delay_ms, 720.0),
-            loss_rate=max(metric.loss_rate, 0.90),
-            available=False,
-        )
+        changed = False
+        for link_key in active_links:
+            metric = snapshot.links.get(link_key)
+            if metric is None:
+                continue
+            links[link_key] = LinkMetric(
+                metric.src,
+                metric.dst,
+                delay_ms=max(metric.delay_ms, 720.0),
+                loss_rate=max(metric.loss_rate, 0.90),
+                available=False,
+                configured_delay_ms=metric.configured_delay_ms,
+                configured_loss_rate=metric.configured_loss_rate,
+                measured_rtt_ms=metric.measured_rtt_ms,
+            )
+            changed = True
+            if self.log is not None:
+                self.log(
+                    "TOXIPROXY_MANUAL_BAD_LINK "
+                    f"link={link_key} elapsed={snapshot.elapsed_s:.1f}s "
+                    f"delay={links[link_key].delay_ms:.1f}ms "
+                    f"loss={links[link_key].loss_rate:.3f}"
+                )
+        if not changed:
+            return snapshot
+
         average_delay = sum(item.delay_ms for item in links.values()) / len(links)
         max_loss = max(item.loss_rate for item in links.values())
-        if self.log is not None:
-            self.log(
-                "TOXIPROXY_MANUAL_BAD_LINK "
-                f"link={self.force_bad_link} elapsed={snapshot.elapsed_s:.1f}s "
-                f"delay={links[self.force_bad_link].delay_ms:.1f}ms "
-                f"loss={links[self.force_bad_link].loss_rate:.3f}"
-            )
         return QualitySnapshot(snapshot.elapsed_s, links, average_delay, max_loss)

@@ -55,6 +55,7 @@ class RunLogger:
         dispatch: DispatchResult,
         forecast: ForecastSnapshot | None = None,
         security: Dict[str, Any] | None = None,
+        manual_control: Dict[str, Any] | None = None,
     ) -> None:
         payload: Dict[str, Any] = {
             "elapsed_s": round(quality.elapsed_s, 3),
@@ -76,6 +77,8 @@ class RunLogger:
         }
         if security is not None:
             payload["security"] = security
+        if manual_control is not None:
+            payload["manual_control"] = manual_control
         if forecast is not None:
             payload["forecast"] = {
                 "method": forecast.method,

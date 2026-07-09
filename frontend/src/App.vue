@@ -6,6 +6,7 @@ import DashboardPanel from './components/DashboardPanel.vue'
 import DrilldownPanel from './components/DrilldownPanel.vue'
 import EfficiencyGauge from './components/EfficiencyGauge.vue'
 import ForecastAccuracyPanel from './components/ForecastAccuracyPanel.vue'
+import ManualControlPanel from './components/ManualControlPanel.vue'
 import PowerTrendChart from './components/PowerTrendChart.vue'
 import TimelinePanel from './components/TimelinePanel.vue'
 import TopStatusBar from './components/TopStatusBar.vue'
@@ -170,6 +171,19 @@ onUnmounted(() => {
             :monte-carlo="verification.data.value.monteCarlo"
             :optimality-gap="verification.data.value.optimalityGap"
             :scenarios="verification.data.value.scenarios"
+          />
+        </DashboardPanel>
+
+        <DashboardPanel class="panel-manual" title="手动控制台" accent="#f5c84c">
+          <template #meta>
+            <span class="evidence-tag evidence-tag--mixed">SCO 操作</span>
+          </template>
+          <ManualControlPanel
+            :elapsed="telemetry.current.value.elapsed_s"
+            :manual-control="telemetry.current.value.manual_control"
+            :response="telemetry.manualResponse.value"
+            :status="telemetry.status.value"
+            @manual-command="telemetry.sendManualControl"
           />
         </DashboardPanel>
 

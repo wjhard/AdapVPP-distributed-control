@@ -4,6 +4,9 @@ import type {
   ConnectionStatus,
   ControllerTraceEntry,
   LinkMap,
+  ManualControlCommand,
+  ManualControlPayload,
+  ManualControlResponse,
   OperatingMode,
   ForecastPayload,
   NodeDispatchSource,
@@ -23,6 +26,7 @@ export function useTelemetry() {
   const history = ref<TelemetrySnapshot[]>([])
   const transitions = ref<TransitionRecord[]>([])
   const fallbackFrames = ref<TelemetrySnapshot[]>([])
+  const manualResponse = ref<ManualControlResponse | null>(null)
 
   let socket: WebSocket | null = null
   let fallbackTimer = 0
@@ -76,7 +80,19 @@ export function useTelemetry() {
 
     socket.onmessage = (event) => {
       try {
-        const payload = JSON.parse(event.data as string) as TelemetryPayload
+        const payload = JSON.parse(event.data as string) as
+          | TelemetryPayload
+          | ManualControlResponse
+        if (isManualControlResponse(payload)) {
+          manualResponse.value = payload
+          if (payload.manual_control) {
+            current.value = {
+              ...current.value,
+              manual_control: normalizeManualControl(payload.manual_control),
+            }
+          }
+          return
+        }
         pushSnapshot(normalizePayload(payload))
       } catch {
         status.value = 'fallback'
@@ -139,6 +155,20 @@ export function useTelemetry() {
     history.value = [...history.value, snapshot].slice(-HISTORY_LIMIT)
   }
 
+  function sendManualControl(command: ManualControlCommand) {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      manualResponse.value = {
+        message_type: 'manual_control_response',
+        ok: false,
+        status: 'offline',
+        message: 'WebSocket 未连接，手动操作未发送',
+        manual_control: current.value.manual_control,
+      }
+      return
+    }
+    socket.send(JSON.stringify({ message_type: 'manual_control', ...command }))
+  }
+
   onMounted(start)
   onUnmounted(stop)
 
@@ -146,8 +176,10 @@ export function useTelemetry() {
     current,
     estimatedLoad,
     history,
+    manualResponse,
     sourceLabel,
     status,
+    sendManualControl,
     totalCommand,
     transitions,
   }
@@ -167,6 +199,12 @@ function inferReason(from: OperatingMode, to: OperatingMode) {
     return '质量恢复，回到全局'
   }
   return '状态滞回切换'
+}
+
+function isManualControlResponse(
+  payload: TelemetryPayload | ManualControlResponse,
+): payload is ManualControlResponse {
+  return 'message_type' in payload && payload.message_type === 'manual_control_response'
 }
 
 function normalizePayload(payload: TelemetryPayload): TelemetrySnapshot {
@@ -196,6 +234,7 @@ function normalizeSnapshot(raw: Partial<TelemetrySnapshot>): TelemetrySnapshot {
     clusters: raw.clusters ?? [[1, 2, 3, 4, 5]],
     forecast: normalizeForecast(raw.forecast, raw),
     security: normalizeSecurity(raw.security, Number(raw.elapsed_s ?? 0)),
+    manual_control: normalizeManualControl(raw.manual_control),
     target_mw: toFive(raw.target_mw),
     command_mw: toFive(raw.command_mw),
     max_delta_mw: Number(raw.max_delta_mw ?? 0),
@@ -204,6 +243,41 @@ function normalizeSnapshot(raw: Partial<TelemetrySnapshot>): TelemetrySnapshot {
     active_controllers: normalizeControllers(raw.active_controllers, mode),
     controller_trace: normalizeControllerTrace(raw.controller_trace, mode),
     dispatch_sources: normalizeDispatchSources(raw.dispatch_sources, mode),
+  }
+}
+
+function normalizeManualControl(raw?: Partial<ManualControlPayload>): ManualControlPayload {
+  return {
+    select_timeout_s: Number(raw?.select_timeout_s ?? 30),
+    pending: Array.isArray(raw?.pending)
+      ? raw.pending.map((item) => ({
+          request_id: String(item.request_id ?? ''),
+          operation: String(item.operation ?? ''),
+          target_key: String(item.target_key ?? ''),
+          target: item.target ?? {},
+          selected_at_epoch_ms: Number(item.selected_at_epoch_ms ?? 0),
+          expires_at_epoch_ms: Number(item.expires_at_epoch_ms ?? 0),
+        }))
+      : [],
+    active_interventions: Array.isArray(raw?.active_interventions)
+      ? raw.active_interventions.map((item) => ({
+          kind: String(item.kind ?? ''),
+          target_key: String(item.target_key ?? ''),
+          label: String(item.label ?? ''),
+          started_at_elapsed_s: Number(item.started_at_elapsed_s ?? 0),
+          expires_at_elapsed_s: Number(item.expires_at_elapsed_s ?? 0),
+          metadata: item.metadata ?? {},
+        }))
+      : [],
+    recent_events: Array.isArray(raw?.recent_events)
+      ? raw.recent_events.map((event) => ({
+          event_type: String(event.event_type ?? ''),
+          operation: String(event.operation ?? ''),
+          target_key: String(event.target_key ?? ''),
+          reason: String(event.reason ?? ''),
+          timestamp_ms: Number(event.timestamp_ms ?? 0),
+        }))
+      : [],
   }
 }
 
@@ -513,6 +587,7 @@ function makeSyntheticSnapshot(elapsed: number): TelemetrySnapshot {
       history_path: 'logs/forecast_accuracy/renewable_forecast_accuracy.csv',
     },
     security: makeSyntheticSecurity(elapsed),
+    manual_control: normalizeManualControl(),
     target_mw: [solar, solar * 0.78, wind, wind * 0.82, bess],
     command_mw: [solar, solar * 0.78, wind, wind * 0.82, bess],
     max_delta_mw: 2.5,
